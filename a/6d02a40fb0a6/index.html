@@ -396,6 +396,8 @@ function draw(){
   // ---- 拡大 ----
   const dd = fitCanvas(dt);
   dc.clearRect(0,0,dt.width,dt.height);
+  const minPx = dd.w / CLIP_MS;                 // 全体がちょうど収まる倍率
+  if(!isFinite(view.pxPerMs) || view.pxPerMs < minPx) view.pxPerMs = minPx;
   const visMs = dd.w / view.pxPerMs;
   view.start = Math.max(0, Math.min(view.start, CLIP_MS - visMs));
   if(im && im.complete && im.naturalWidth){
@@ -480,7 +482,8 @@ function zoomBy(f){
   // 選択中のランドマークがあればそこを、無ければ表示中央を固定して拡大する
   const anchor = (r[active] != null) ? r[active] : view.start + (w/view.pxPerMs)/2;
   const frac = (anchor - view.start) / (w/view.pxPerMs);
-  view.pxPerMs = Math.max(0.4, Math.min(40, view.pxPerMs * f));
+  const wNow = dt.getBoundingClientRect().width || 1;
+  view.pxPerMs = Math.max(wNow / CLIP_MS, Math.min(40, view.pxPerMs * f));
   view.start = anchor - frac * (w/view.pxPerMs);
   draw();
 }
@@ -519,7 +522,7 @@ function go(n){
   // 必要に応じて拡大する。パン操作は基本的に不要。
   // **初期値としてランドマークは置かない。** 事前配置はアンカリングを生み、
   // §5.2 の採否判定（セグメント持続時間 ≒ VOT か）を構成上無効にする。
-  const w0 = dt.getBoundingClientRect().width;
+  const w0 = dt.getBoundingClientRect().width || dt.clientWidth || 800;
   view.pxPerMs = w0 / CLIP_MS;
   view.start = 0;
   active = "burst";
@@ -586,7 +589,8 @@ dt.addEventListener("wheel", e=>{
   const r = dt.getBoundingClientRect();
   const at = view.start + (e.clientX - r.left)/view.pxPerMs;
   const f = e.deltaY < 0 ? 1.25 : 0.8;
-  view.pxPerMs = Math.max(0.4, Math.min(40, view.pxPerMs*f));
+  const wNow = dt.getBoundingClientRect().width || 1;
+  view.pxPerMs = Math.max(wNow / CLIP_MS, Math.min(40, view.pxPerMs*f));
   view.start = at - (e.clientX - r.left)/view.pxPerMs;
   draw();
 }, {passive:false});
