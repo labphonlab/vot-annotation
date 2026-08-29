@@ -92,6 +92,9 @@
   .pf input,.pf select{flex:1;font:inherit;padding:5px 7px;
     border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--fg)}
   .req{color:#b91c1c}
+  #dlgWelcome{max-width:40em;border:1px solid var(--line);border-radius:10px;
+             padding:1.4em;line-height:1.65}
+  #dlgWelcome h4{font-size:14px;margin-bottom:.2em}
   #dlgProfile{max-width:38em;border:1px solid var(--line);border-radius:10px;padding:1.3em}
   button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:650}
   /* 最初に押すボタン。迷わせないよう、他より明らかに大きく目立たせる */
@@ -123,6 +126,47 @@
   <input type="file" id="resumeFile" accept=".csv,text/csv" hidden>
   <button class="mini" id="help">操作説明</button>
 </header>
+
+<dialog id="dlgWelcome">
+  <h3 style="margin:0 0 .5em">ご協力ありがとうございます</h3>
+  <p style="margin:0 0 1em">
+    韓国語の音声について、<b>VOT（有声開始時間）を手作業で計測</b>していただきます。
+    自動測定の妥当性を確かめるための参照値になります。</p>
+
+  <h4 style="margin:1.2em 0 .3em">作業の内容</h4>
+  <p style="margin:0 0 .8em">
+    0.7 秒の音声について、<b>2 か所</b>に印を付けていただきます。</p>
+  <ul style="margin:0 0 1em;padding-left:1.4em">
+    <li><b>burst</b> … 閉鎖の解放（破裂）の瞬間</li>
+    <li><b>voicing onset</b> … そのあと声帯振動（周期性）が始まる瞬間</li>
+  </ul>
+  <p class="hint" style="margin:0 0 1.2em">
+    全 <b id="wcN">—</b> 件、<b>1 時間弱</b>を見込んでいます。
+    途中で中断でき、同じリンクを開けば続きから再開できます。</p>
+
+  <h4 style="margin:1.2em 0 .3em">進め方</h4>
+  <ol style="margin:0 0 1em;padding-left:1.4em">
+    <li>「▶ 音声を再生」で聞く（<b>聞かなくても構いません</b>）</li>
+    <li>上の帯で対象の閉鎖音を探す。クリックでその位置へ移動します</li>
+    <li>「＋ 拡大」で波形を確かめる。波形上を<b>ドラッグするとその範囲だけ再生</b>されます</li>
+    <li>クリックで点を置く。線は直接ドラッグでも動かせます</li>
+  </ol>
+
+  <h4 style="margin:1.2em 0 .3em">とくに大事な 2 点</h4>
+  <p class="rule" style="display:block;margin:0 0 .6em">
+    クリップに<b>別の閉鎖音</b>が入っていることがよくあります。
+    対象は<b>冒頭の無音の直後にある最初のバースト</b>です。後続は無視してください。</p>
+  <p class="rule" style="display:block;margin:0 0 1.2em">
+    <b>迷ったら「判定不能」で構いません。</b>
+    「このあたりだろう」で置かないでください。判定不能のほうが有用です。</p>
+
+  <p class="hint" style="margin:0 0 1.2em">
+    入力は<b>自動的に保存されます</b>。最後に何かを送っていただく必要はありません。<br>
+    謝礼は作業完了後、メールでお送りします。<br>
+    この説明は、右上の「操作説明」からいつでもご覧いただけます。</p>
+
+  <div style="text-align:right"><button class="primary" id="wcGo">はじめる</button></div>
+</dialog>
 
 <dialog id="dlgProfile">
   <h3 style="margin:0 0 .3em">はじめに（1分）</h3>
@@ -1091,6 +1135,13 @@ function showManualResume(why){
   if(b){ b.hidden = false; b.title = why || ""; }
 }
 /** 冒頭アンケート。済んでいれば出さない。 */
+/** 初回だけ、挨拶と手順を先に出す。いきなり個人情報を訊かない */
+function askWelcome(done){
+  document.getElementById("wcN").textContent = TOKENS.length;
+  const dlg = document.getElementById("dlgWelcome");
+  dlg.showModal();
+  document.getElementById("wcGo").onclick = ()=>{ dlg.close(); done(); };
+}
 function askProfile(done){
   const dlg = document.getElementById("dlgProfile");
   const g = id => document.getElementById(id).value.trim();
@@ -1121,7 +1172,7 @@ function pullThenStart(){
   const start = ()=>{ go(firstUnfilled()); };
   if(!SYNC_ON){
     if(!STORE_OK) showManualResume("このブラウザでは自動保存が使えません");
-    if(lsGet(KEY + "_pf")) start(); else askProfile(start);
+    if(lsGet(KEY + "_pf")) start(); else askWelcome(()=>askProfile(start));
     return;
   }
   syncBadge();
@@ -1158,7 +1209,7 @@ function pullThenStart(){
     const asked = (res && res.profile) || lsGet(KEY + "_pf");
     const go2 = ()=>{ go(firstUnfilled());
       if(n) setTimeout(()=>alert("前回の続きから再開します（" + n + " 件を復元）。"), 100); };
-    if(asked){ lsSet(KEY + "_pf", "1"); go2(); } else { askProfile(go2); }
+    if(asked){ lsSet(KEY + "_pf", "1"); go2(); } else { askWelcome(()=>askProfile(go2)); }
   });
 }
 
