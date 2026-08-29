@@ -431,13 +431,26 @@ function draw(){
   // 出力はフッタ右端の1か所だけ。作業途中でも押せるようにしておく
   // （自動保存が効かない環境では、閉じる前に出力してもらう必要がある）。
   // 全件終わったときだけ目立たせる
+  // ボタンの名前は実際の動作に合わせる。
+  //  サーバ同期あり: 送信は1件ごとに済んでいる。ここで出すのは控えであり、
+  //                  「送信」と書くと二重に誤解を招く（もう送ってある）
+  //  同期なし      : 書き出したファイルを協力者がメールで送る。「出力」が正しい
   const fin = document.getElementById("finish2");
-  fin.classList.toggle("ready", complete);
-  fin.classList.toggle("mini", !complete);
-  fin.textContent = complete ? "✓ 結果を出力する" : "結果を出力";
+  const sent = SYNC_ON && queue.length === 0;
+  fin.classList.toggle("ready", complete && !SYNC_ON);
+  fin.classList.toggle("mini", !(complete && !SYNC_ON));
+  fin.textContent = SYNC_ON ? "控えを保存"
+                            : (complete ? "✓ 結果を出力する" : "結果を出力");
   const sv = document.getElementById("saved");
-  if(complete && STORE_OK){
-    sv.textContent = "全 " + nAll + " 件が終わりました。→";
+  if(complete && SYNC_ON && sent){
+    sv.textContent = "✓ 全 " + nAll + " 件を送信済みです。ご返信は不要です。";
+    sv.className = "hint allDone";
+  } else if(complete && SYNC_ON){
+    sv.textContent = "未送信が " + queue.length + " 件あります。この画面を開いたままお待ちください。";
+    sv.className = "hint warn";
+  } else if(complete && STORE_OK){
+    sv.textContent = "全 " + nAll + " 件が終わりました。「結果を出力」でファイルを保存し、"
+                   + "メールに添付してご返信ください。→";
     sv.className = "hint allDone";
   } else if(STORE_OK){
     sv.textContent = "自動保存されています";
