@@ -400,6 +400,26 @@ function commit(id){
   const r = state[id]; if(r) r.ts = Date.now();
   save();
   enqueue(id);
+  scheduleDoneAsk();
+}
+
+// 最後の1件を入れた直後にいきなり確認を出すと、まだ微調整している最中に
+// 割り込むことになる。数秒おいてから訊き、その間に手を加えたら数え直す。
+const DONE_DELAY_MS = 4000;
+let doneTimer = null, doneAsked = false;
+function cancelDoneAsk(){
+  if(doneTimer){ clearTimeout(doneTimer); doneTimer = null; }
+}
+function scheduleDoneAsk(){
+  cancelDoneAsk();
+  if(!SYNC_ON || doneAsked || lsGet(KEY + "_done")) return;
+  if(doneCount() !== TOKENS.length) return;
+  doneTimer = setTimeout(()=>{
+    doneTimer = null;
+    if(doneCount() !== TOKENS.length) return;   // 待つあいだに消された
+    doneAsked = true;                            // 自動で訊くのは一度だけ
+    askDone();
+  }, DONE_DELAY_MS);
 }
 
 function loadImg(i){
@@ -501,13 +521,8 @@ function draw(){
   const fin = document.getElementById("finish2");
   const sent = SYNC_ON && queue.length === 0;
   // 全件終わったら、終わりを明示する。ここが無いと「まだ何かあるのか」と迷う
-  // 最後の1件を入れた瞬間に、こちらから確かめる。
-  // ボタンに気づくのを待つと、終わったのに終わっていない状態が残る。
-  // ただし訊くのは一度だけ。「まだ見直す」を選んだ人を追い立てない
-  if(complete && SYNC_ON && wasComplete === false && !lsGet(KEY + "_done")){
-    setTimeout(askDone, 400);
-  }
-  wasComplete = complete;
+  // 全件そろっていない状態に戻ったら、予約してある確認は取り消す
+  if(!complete) cancelDoneAsk();
   const endBtn = document.getElementById("endBtn");
   endBtn.hidden = !(complete && SYNC_ON);
   endBtn.classList.toggle("ready", !lsGet(KEY + "_done"));
@@ -619,8 +634,6 @@ function setMs(which, ms){
   commit(cur().id); draw();
 }
 
-// null = 初回描画前。復元直後にいきなり訊かないための目印
-let wasComplete = null;
 let tEnter = Date.now();
 function go(n){
   // 直前トークンの所要時間を積算（QC 用）
