@@ -75,6 +75,8 @@
   .row.alt{margin-top:4px;padding-top:7px;border-top:1px dashed var(--line)}
   /* 7割以上のクリップに別の閉鎖音のバーストが入る。手順書を最初に一度読むだけでは
      忘れるので、毎トークン目に入る位置に出しておく */
+  .ordererr{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
+            padding:6px 11px;font-size:13px;color:#b91c1c}
   .finbar{background:#eef7f0;border:1px solid #bcdcc6;border-radius:6px;
           padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
   .filewarn{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
@@ -245,6 +247,10 @@
     <button class="mini" data-nudge="voi" data-d="5">+5 ms</button>
     <button class="mini" data-clear="voi">消去</button>
   </div>
+  <div class="row" id="orderErr" hidden>
+    <span class="ordererr">⚠ <b>有声開始がバーストより前にあります。</b>
+      有声開始は、解放（バースト）より後に置いてください。</span></div>
+
   <div class="row alt">
     <span class="hint" style="margin-right:2px">または</span>
     <button id="uncBtn">判定不能にする</button>
@@ -568,6 +574,7 @@ function draw(){
                             : (complete ? "✓ 結果を出力する" : "結果を出力");
   // 飛ばした分を探せるようにする。80件のうち数件抜けると、
   // 手作業で探すのは現実的でない
+  document.getElementById("orderErr").hidden = !orderBad(r);
   const gapsBtn = document.getElementById("gaps");
   const gaps = unfilledList();
   gapsBtn.hidden = gaps.length === 0;
@@ -949,9 +956,15 @@ document.getElementById("resumeFile").onchange = (e)=>{
 // ---- 開き直したときに続きから始める ----
 // 保存が効く環境（Firefox の file://、または http で配信した場合）では、
 // 保存済みの state がそのまま読み込まれるので、最初の未記入トークンへ飛ぶだけでよい。
+/** burst < voicing_onset か。手続き書 §5.2 のとおり、前有声化があっても
+    voicing_onset は解放**後**の周期性開始に置くので、この順序は必ず成り立つ。
+    逆転しているのは置き間違いであり、記入済みとして数えない */
+function orderBad(st){
+  return !!(st && st.burst != null && st.voi != null && st.voi <= st.burst);
+}
 function isFilled(t){
   const st = state[t.id];
-  return !!(st && (st.unc || (st.burst != null && st.voi != null)));
+  return !!(st && (st.unc || (st.burst != null && st.voi != null && !orderBad(st))));
 }
 /** 未記入のトークン番号（0起点）を全部返す */
 function unfilledList(){
