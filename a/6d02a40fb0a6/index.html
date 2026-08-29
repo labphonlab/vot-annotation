@@ -108,7 +108,7 @@
   <h1>VOTの手計測</h1>
   <span class="prog" id="prog">– / –</span>
   <span class="sp"></span>
-  <button class="mini" id="resume">途中から再開</button>
+  <button class="mini" id="resume" hidden>ファイルから再開</button>
   <input type="file" id="resumeFile" accept=".csv,text/csv" hidden>
   <button class="mini" id="help">操作説明</button>
 </header>
@@ -846,8 +846,20 @@ function flush(){
 addEventListener("online", flush);
 
 /** 起動時にサーバから自分の記録を取り戻す。手元と重なる場合は新しいほうを採る。 */
+/** 自動で戻せないときだけ、手動の復旧手段を出す。
+    自動復元が効いているなら、押す機会のないボタンは置かない。 */
+function showManualResume(why){
+  const b = document.getElementById("resume");
+  if(b){ b.hidden = false; b.title = why || ""; }
+}
 function pullThenStart(){
-  if(!SYNC_ON){ go(firstUnfilled()); return; }
+  // サーバ同期が無い場合、頼れるのはブラウザの保存だけ。
+  // それが使えない環境では手動の復旧を出しておく
+  if(!SYNC_ON){
+    if(!STORE_OK) showManualResume("このブラウザでは自動保存が使えません");
+    go(firstUnfilled());
+    return;
+  }
   syncBadge();
   const u = SYNC_URL + (SYNC_URL.indexOf("?") < 0 ? "?" : "&")
           + "annotator=" + encodeURIComponent(AID) + "&key=" + encodeURIComponent(SYNC_KEY);
@@ -869,9 +881,17 @@ function pullThenStart(){
       });
       save();
     }
+    if(!res || !res.ok){
+      // サーバから取り戻せなかった。手元に何も無ければ復旧手段が要る
+      showManualResume("サーバに接続できませんでした");
+      if(doneCount() === 0)
+        setTimeout(()=>alert("サーバに接続できませんでした。\n"
+          + "これまでの記録がある場合は「ファイルから再開」で読み込んでください。\n"
+          + "無い場合はそのままお進みください（入力は後で自動的に送信されます）。"), 100);
+    }
     syncBadge();
     go(firstUnfilled());
-    if(n) setTimeout(()=>alert("サーバから " + n + " 件を復元しました。続きから始めます。"), 100);
+    if(n) setTimeout(()=>alert("前回の続きから再開します（" + n + " 件を復元）。"), 100);
   });
 }
 
