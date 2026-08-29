@@ -1158,11 +1158,17 @@ function showManualResume(why){
 /** 冒頭アンケート。済んでいれば出さない。 */
 /** 初回だけ、挨拶と手順を先に出す。いきなり個人情報を訊かない */
 function askWelcome(done){
-  document.getElementById("wcN").textContent = TOKENS.length;
-  // 所要時間も件数から出す。固定文字列だと、10件のお試しでも
-  // 「1時間弱」と出てしまう（実際そうなっていた）
-  const mins = Math.max(5, Math.round(TOKENS.length * 40 / 60 / 5) * 5);
-  document.getElementById("wcT").textContent = "約 " + mins + " 分";
+  // 件数も時間も**概数**で出す。79件・55分のような細かい数字は、
+  // 正確に見えて外れたときに不信を招く。丸めた言い方のほうが実態に合う
+  const n = TOKENS.length;
+  document.getElementById("wcN").textContent =
+    n >= 30 ? "約 " + Math.round(n / 10) * 10 : String(n);
+  const mins = n * 40 / 60;
+  document.getElementById("wcT").textContent =
+    mins < 10 ? "10 分程度"
+    : mins < 45 ? "約 " + Math.round(mins / 10) * 10 + " 分"
+    : mins < 75 ? "1 時間弱"
+    : "約 " + (Math.round(mins / 30) / 2) + " 時間";
   const dlg = document.getElementById("dlgWelcome");
   dlg.showModal();
   document.getElementById("wcGo").onclick = ()=>{ dlg.close(); done(); };
