@@ -40,6 +40,10 @@
          border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:crosshair}
   #overview{height:58px;margin-bottom:4px;cursor:pointer}
   #detail{flex:1 1 0;min-height:150px;height:auto}
+  /* hidden 属性は UA の [hidden]{display:none} で効くが、
+     クラス側で display を指定すると負けて、隠したはずの要素が出てしまう。
+     実際、順序の警告が常時表示になっていた */
+  [hidden]{display:none !important}
   .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
   button{font:inherit;padding:7px 13px;border:1px solid var(--line);border-radius:6px;
          background:var(--panel);color:var(--fg);cursor:pointer}
