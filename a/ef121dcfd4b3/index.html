@@ -1090,10 +1090,21 @@ function payload(id){
           client_ts: s2.ts || 0};
 }
 
+// 直近に送った内容。値が変わっていないのに送り続けると、シートが
+// 同じ行で埋まる（10件のテストで100行超。本番なら数千行になる）
+const lastSent = {};
+function sig(pl){
+  return [pl.burst_ms, pl.voicing_onset_ms, pl.uncodable, pl.reason].join("|");
+}
 function enqueue(id){
   if(!SYNC_ON) return;
+  const pl = payload(id), prev = lastSent[id];
+  // 値が同じなら送らない。ただし所要時間が 20 秒以上伸びていれば
+  // 記録を更新する（計測時間は報告に使うので、放っておけない）
+  if(prev && sig(prev) === sig(pl) && (pl.seconds_spent - prev.seconds_spent) < 20) return;
+  lastSent[id] = pl;
   queue = queue.filter(x => x.token_id !== id);   // 同じトークンは最新だけ送る
-  queue.push(payload(id));
+  queue.push(pl);
   lsSet(KEY + "_q", JSON.stringify(queue));
   syncBadge();
   flush();
