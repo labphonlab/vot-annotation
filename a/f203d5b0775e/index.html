@@ -158,6 +158,23 @@
   <div style="text-align:right"><button class="primary" id="pfGo">始める</button></div>
 </dialog>
 
+<dialog id="dlgDone">
+  <h3 style="margin:0 0 .5em">これで終了してよろしいですか</h3>
+  <p id="doneMsg" class="hint" style="margin:0 0 1.2em"></p>
+  <div style="text-align:right;display:flex;gap:8px;justify-content:flex-end">
+    <button class="mini" id="doneBack">まだ見直す</button>
+    <button class="primary" id="doneGo">終了する</button></div>
+</dialog>
+
+<dialog id="dlgThanks">
+  <h3 style="margin:0 0 .5em">ありがとうございました</h3>
+  <p style="margin:0 0 .6em">作業は以上です。<b>この画面は閉じていただいて構いません。</b></p>
+  <p class="hint" style="margin:0 0 1.2em">
+    記入内容はすべて保存されています。ご返信は不要です。<br>
+    謝礼は後日、メールでお送りします。</p>
+  <div style="text-align:right"><button class="mini" id="thanksClose">閉じる</button></div>
+</dialog>
+
 <main>
   <div id="filewarn" class="filewarn" hidden>
     <b>このままでは作業が保存されません。</b>
@@ -235,6 +252,7 @@
   <span class="hint" id="sync" hidden></span>
   <!-- 「次へ」の隣に置くと、送り続けた勢いで誤って押す。右端に離す -->
   <button id="finish2" class="mini">結果を出力</button>
+  <button id="endBtn" class="ready" hidden>✓ 作業を終了する</button>
 </footer>
 
 <dialog id="dlgHelp">
@@ -482,9 +500,21 @@ function draw(){
   //  同期なし      : 書き出したファイルを協力者がメールで送る。「出力」が正しい
   const fin = document.getElementById("finish2");
   const sent = SYNC_ON && queue.length === 0;
+  // 全件終わったら、終わりを明示する。ここが無いと「まだ何かあるのか」と迷う
+  // 最後の1件を入れた瞬間に、こちらから確かめる。
+  // ボタンに気づくのを待つと、終わったのに終わっていない状態が残る。
+  // ただし訊くのは一度だけ。「まだ見直す」を選んだ人を追い立てない
+  if(complete && SYNC_ON && wasComplete === false && !lsGet(KEY + "_done")){
+    setTimeout(askDone, 400);
+  }
+  wasComplete = complete;
+  const endBtn = document.getElementById("endBtn");
+  endBtn.hidden = !(complete && SYNC_ON);
+  endBtn.classList.toggle("ready", !lsGet(KEY + "_done"));
+  endBtn.textContent = lsGet(KEY + "_done") ? "✓ 終了しました" : "✓ 作業を終了する";
   fin.classList.toggle("ready", complete && !SYNC_ON);
   fin.classList.toggle("mini", !(complete && !SYNC_ON));
-  fin.textContent = SYNC_ON ? "手元に控えを保存"
+  fin.textContent = SYNC_ON ? "ここまでをファイルに保存"
                             : (complete ? "✓ 結果を出力する" : "結果を出力");
   // 飛ばした分を探せるようにする。80件のうち数件抜けると、
   // 手作業で探すのは現実的でない
@@ -589,6 +619,8 @@ function setMs(which, ms){
   commit(cur().id); draw();
 }
 
+// null = 初回描画前。復元直後にいきなり訊かないための目印
+let wasComplete = null;
 let tEnter = Date.now();
 function go(n){
   // 直前トークンの所要時間を積算（QC 用）
@@ -757,6 +789,7 @@ function openOut(){
   dlgOut.showModal();
 }
 document.getElementById("finish2").onclick = openOut;
+document.getElementById("endBtn").onclick = askDone;
 document.getElementById("copy").onclick = async ()=>{
   const ta = document.getElementById("out");
   ta.select();
@@ -805,6 +838,29 @@ function restoreFromCsv(text){
   save();
   return {n, foreign};
 }
+/** 作業終了の申告。データは1件ごとに保存済みなので「送信」ではなく
+    「終了してよいか」を確かめる。終わりが明示されないと、
+    まだ何か必要なのかと迷わせる。 */
+function askDone(){
+  const n = doneCount(), na = TOKENS.length, unc = TOKENS.filter(t=>(state[t.id]||{}).unc).length;
+  document.getElementById("doneMsg").innerHTML =
+    "全 " + na + " 件のうち <b>" + n + " 件</b>にご記入いただきました"
+    + (unc ? "（うち判定不能 " + unc + " 件）" : "") + "。<br>"
+    + "記入内容は<b>すでに保存されています</b>ので、ここで送信する操作はありません。";
+  dlgDone.showModal();
+}
+document.getElementById("doneBack").onclick = ()=>dlgDone.close();
+document.getElementById("doneGo").onclick = ()=>{
+  if(SYNC_ON){
+    fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({key:SYNC_KEY, kind:"done", annotator:AID,
+                            n_filled:doneCount(), n_total:TOKENS.length})}).catch(()=>{});
+  }
+  lsSet(KEY + "_done", "1");
+  dlgDone.close(); dlgThanks.showModal();
+};
+document.getElementById("thanksClose").onclick = ()=>dlgThanks.close();
+
 document.getElementById("gaps").onclick = ()=>{
   const gaps = unfilledList();
   if(!gaps.length) return;
@@ -904,7 +960,7 @@ function syncBadge(){
     el.textContent = "✓ 保存されています";
     el.className = "hint allDone";
   }
-  // 保存が滞っているときだけ、手元に控えを取る手段を出す
+  // 保存が滞っているときだけ、手元にファイルとして残す手段を出す
   const fin = document.getElementById("finish2");
   if(fin) fin.hidden = SYNC_ON && !syncStuck();
 }
