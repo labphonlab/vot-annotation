@@ -395,12 +395,15 @@ if(HAS_AUDIO){
 function cur(){ return TOKENS[idx]; }
 function rec(){ return state[cur().id] || (state[cur().id] = {}); }
 function save(){ lsSet(KEY, JSON.stringify(state)); if(!STORE_OK){ warnNoSave(); autoDump(); } }
-/** 1トークン分の変更を確定して、サーバにも送る */
-function commit(id){
+/** 1トークン分の変更を確定して、サーバにも送る。
+    fromEdit=false は所要時間の記録だけの保存（トークン移動時）。
+    このとき完了確認を予約してはいけない。完了済みのパケットを
+    開き直しただけで「終了してよいですか」が出てしまう */
+function commit(id, fromEdit){
   const r = state[id]; if(r) r.ts = Date.now();
   save();
   enqueue(id);
-  scheduleDoneAsk();
+  if(fromEdit !== false) scheduleDoneAsk();
 }
 
 // 最後の1件を入れた直後にいきなり確認を出すと、まだ微調整している最中に
@@ -638,7 +641,7 @@ let tEnter = Date.now();
 function go(n){
   // 直前トークンの所要時間を積算（QC 用）
   if(TOKENS[idx]){ const r0 = state[TOKENS[idx].id] || (state[TOKENS[idx].id]={});
-    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; commit(TOKENS[idx].id); }
+    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; commit(TOKENS[idx].id, false); }
   tEnter = Date.now();
   idx = Math.max(0, Math.min(TOKENS.length-1, n));
   const r = rec();
