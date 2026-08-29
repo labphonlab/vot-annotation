@@ -142,7 +142,7 @@
     <li><b>voicing onset</b> … 声帯振動（周期性）が始まる瞬間</li>
   </ul>
   <p class="hint" style="margin:0 0 1.2em">
-    全 <b id="wcN">—</b> 件、<b>1 時間弱</b>を見込んでいます。
+    全 <b id="wcN">—</b> 件、<b id="wcT">—</b>を見込んでいます。
     途中で中断でき、同じリンクを開けば続きから再開できます。</p>
 
   <h4 style="margin:1.2em 0 .3em">操作</h4>
@@ -1159,6 +1159,10 @@ function showManualResume(why){
 /** 初回だけ、挨拶と手順を先に出す。いきなり個人情報を訊かない */
 function askWelcome(done){
   document.getElementById("wcN").textContent = TOKENS.length;
+  // 所要時間も件数から出す。固定文字列だと、10件のお試しでも
+  // 「1時間弱」と出てしまう（実際そうなっていた）
+  const mins = Math.max(5, Math.round(TOKENS.length * 40 / 60 / 5) * 5);
+  document.getElementById("wcT").textContent = "約 " + mins + " 分";
   const dlg = document.getElementById("dlgWelcome");
   dlg.showModal();
   document.getElementById("wcGo").onclick = ()=>{ dlg.close(); done(); };
