@@ -521,8 +521,8 @@ function draw(){
   const gapsBtn = document.getElementById("gaps");
   const gaps = unfilledList();
   gapsBtn.hidden = gaps.length === 0;
+  gapsBtn.textContent = gaps.length ? "未記入 " + gaps.length + " 件へ →" : "";
   if(gaps.length){
-    gapsBtn.textContent = "未記入 " + gaps.length + " 件へ →";
     gapsBtn.classList.toggle("ready", complete === false && gaps.length > 0
                              && idx === TOKENS.length - 1);
   }
