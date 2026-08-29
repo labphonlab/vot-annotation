@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VOTの手計測 — ANNOT01</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#16181d; --muted:#5b6270; --line:#d7dbe2;
+    --burst:#c62828; --voi:#1565c0; --unc:#8d6e00; --panel:#f6f7f9; --accent:#0b6b5e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161a; --fg:#e8eaee; --muted:#9aa2b1; --line:#2c313a;
+      --panel:#1b1e24; --burst:#ff6b6b; --voi:#69a7ff; --unc:#e0b64a; --accent:#4dd6c1;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;
+         background:var(--bg);z-index:5}
+  h1{font-size:15px;margin:0;font-weight:650}
+  .sp{flex:1}
+  .prog{font-variant-numeric:tabular-nums;color:var(--muted)}
+  /* 下余白は footer の実高から JS で決める。ここの値は JS が動く前の保険。
+     footer は折り返すうえ、保存警告が出ると伸びるので固定値だと下が隠れる */
+  /* 1画面に収める。110件を繰り返す作業でスクロールが要ると、
+     下の操作を見落とす事故が起きる（実際に起きた）。
+     波形が残りの高さを全部取り、それ以外は必要な分だけ。
+     窓が極端に低いときだけ main の中でスクロールする */
+  main{padding:8px 16px 10px;max-width:1500px;margin:0 auto;width:100%;
+       box-sizing:border-box;flex:1 1 auto;min-height:0;overflow:auto;
+       display:flex;flex-direction:column;gap:0}
+  main > *{flex:none}
+  canvas{width:100%;display:block;background:var(--panel);
+         border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:crosshair}
+  #overview{height:58px;margin-bottom:4px;cursor:pointer}
+  #detail{flex:1 1 0;min-height:150px;height:auto}
+  /* hidden 属性は UA の [hidden]{display:none} で効くが、
+     クラス側で display を指定すると負けて、隠したはずの要素が出てしまう。
+     実際、順序の警告が常時表示になっていた */
+  [hidden]{display:none !important}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+  button{font:inherit;padding:7px 13px;border:1px solid var(--line);border-radius:6px;
+         background:var(--panel);color:var(--fg);cursor:pointer}
+  button:hover{border-color:var(--muted)}
+  button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.mini{padding:5px 9px;font-size:13px}
+  .val{font-weight:600;min-width:64px;display:inline-block;font-size:13px;color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;
+        border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .chip.sel{cursor:pointer;user-select:none}
+  .chip.sel.act{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;font-weight:650}
+  .hint{color:var(--muted);font-size:13px}
+  select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;
+         background:var(--panel);color:var(--fg)}
+  footer{flex:none;background:var(--bg);
+         border-top:1px solid var(--line);padding:7px 16px;display:flex;gap:10px;
+         align-items:center;flex-wrap:wrap}
+  textarea{width:100%;height:230px;font:12px/1.45 ui-monospace,Menlo,monospace;
+           border:1px solid var(--line);border-radius:6px;padding:9px;
+           background:var(--panel);color:var(--fg)}
+  dialog{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);
+         max-width:760px;width:92%;padding:20px}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  .k{display:inline-block;border:1px solid var(--line);border-radius:4px;
+     padding:1px 6px;font-size:12px;background:var(--panel)}
+  .step{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+        margin:9px 0 4px;font-size:13px;color:var(--muted)}
+  .step:first-child{margin-top:2px}
+  .num{display:inline-flex;align-items:center;justify-content:center;
+       width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+       font-size:12px;font-weight:700;flex:none}
+  .row.alt{margin-top:4px;padding-top:7px;border-top:1px dashed var(--line)}
+  /* 7割以上のクリップに別の閉鎖音のバーストが入る。手順書を最初に一度読むだけでは
+     忘れるので、毎トークン目に入る位置に出しておく */
+  .finbar{background:#eef7f0;border:1px solid #bcdcc6;border-radius:6px;
+          padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
+  .filewarn{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
+            padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
+  .filewarn code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+  .rule{font-size:12px;color:var(--fg);background:#fdf6e3;border:1px solid #e6d9a8;
+        border-radius:5px;padding:2px 8px}
+  .rule b{font-weight:700}
+  .done{color:var(--accent);font-weight:650}
+  .warn{color:#b45309;font-weight:650}
+  .pf{display:flex;align-items:center;gap:10px;margin:.35em 0}
+  .pf label{flex:0 0 15em;font-size:13px}
+  .pf input,.pf select{flex:1;font:inherit;padding:5px 7px;
+    border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--fg)}
+  .req{color:#b91c1c}
+  #dlgWelcome{max-width:40em;border:1px solid var(--line);border-radius:10px;
+             padding:1.4em;line-height:1.65}
+  #dlgWelcome h4{font-size:14px;margin-bottom:.2em}
+  #dlgProfile{max-width:38em;border:1px solid var(--line);border-radius:10px;padding:1.3em}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:650}
+  /* 最初に押すボタン。迷わせないよう、他より明らかに大きく目立たせる */
+  .playrow{display:flex;align-items:center;gap:10px;margin:4px 0 2px}
+  .playbig{background:var(--accent);color:#fff;border:1px solid var(--accent);
+           font-weight:700;font-size:15px;padding:8px 18px;border-radius:8px;cursor:pointer}
+  .playbig:hover{filter:brightness(1.08)}
+  .playbig.playing{animation:pulse 1.2s ease-in-out infinite}
+  /* 全件終わったら「結果を出力」を目立たせる。送り忘れが一番困る失敗なので */
+  button.ready{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;
+               animation:pulse 1.7s ease-in-out infinite}
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent)}
+    50%    {box-shadow:0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent)}
+  }
+  @media (prefers-reduced-motion: reduce){ button.ready{animation:none} }
+  .allDone{color:var(--accent);font-weight:700}
+  table{border-collapse:collapse;font-size:14px}
+  td,th{border:1px solid var(--line);padding:5px 9px;text-align:left}
+</style>
+</head>
+<body>
+<header>
+  <h1>VOTの手計測</h1>
+  <span class="prog" id="prog">– / –</span>
+  <span class="sp"></span>
+  <button class="mini" id="gaps" hidden></button>
+  <button class="mini" id="resume" hidden>ファイルから再開</button>
+  <input type="file" id="resumeFile" accept=".csv,text/csv" hidden>
+  <button class="mini" id="help">操作説明</button>
+</header>
+
+<dialog id="dlgWelcome">
+  <h3 style="margin:0 0 .5em">ご協力ありがとうございます</h3>
+  <p style="margin:0 0 1em">
+    韓国語の音声について、<b>VOT（有声開始時間）を手作業で計測</b>していただきます。</p>
+
+  <h4 style="margin:1.2em 0 .3em">作業の内容</h4>
+  <p style="margin:0 0 .8em">
+    0.7 秒の音声について、<b>2 か所</b>に印を付けていただきます。</p>
+  <ul style="margin:0 0 1em;padding-left:1.4em">
+    <li><b>burst</b> … 閉鎖の解放（破裂）の瞬間</li>
+    <li><b>voicing onset</b> … そのあと声帯振動（周期性）が始まる瞬間</li>
+  </ul>
+  <p class="hint" style="margin:0 0 1.2em">
+    全 <b id="wcN">—</b> 件、<b>1 時間弱</b>を見込んでいます。
+    途中で中断でき、同じリンクを開けば続きから再開できます。</p>
+
+  <h4 style="margin:1.2em 0 .3em">操作</h4>
+  <p style="margin:0 0 .5em">クリックで点を置きます。線は直接ドラッグでも動かせます。</p>
+  <p class="hint" style="margin:0 0 .3em">次は必要に応じてお使いください。</p>
+  <ul style="margin:0 0 1em;padding-left:1.4em">
+    <li>「＋ 拡大」で波形を拡大できます</li>
+    <li>波形上をドラッグすると、その範囲だけ再生されます</li>
+    <li>音声の再生（<b>聞かなくても構いません</b>）</li>
+  </ul>
+
+  <h4 style="margin:1.2em 0 .3em">とくに大事な 2 点</h4>
+  <p class="rule" style="display:block;margin:0 0 .6em">
+    クリップに<b>別の閉鎖音</b>が入っていることがよくあります。
+    対象は<b>ファイルに最初に現れるバースト</b>です。後続は無視してください。<br>
+    <span class="hint">まれに、冒頭から別の音声が続いていて対象を特定できない
+    クリップがあります。その場合は「判定不能」にしてください。</span></p>
+  <p class="rule" style="display:block;margin:0 0 1.2em">
+    <b>迷ったら「判定不能」で構いません。</b>
+    「このあたりだろう」で置かないでください。判定不能のほうが有用です。</p>
+
+  <p class="hint" style="margin:0 0 1.2em">
+    入力は<b>自動的に保存されます</b>。最後に何かを送っていただく必要はありません。<br>
+    謝礼は作業完了後、メールでお送りします。<br>
+    この説明は、右上の「操作説明」からいつでもご覧いただけます。</p>
+
+  <div style="text-align:right"><button class="primary" id="wcGo">はじめる</button></div>
+</dialog>
+
+<dialog id="dlgProfile">
+  <h3 style="margin:0 0 .3em">はじめに（1分）</h3>
+  <p class="hint" style="margin:0 0 1em">
+    作業を始める前に、いくつか伺わせてください。<br>
+    <b>お名前と連絡先は、作業についてのご連絡と謝礼のお支払いにのみ使用します。</b>
+    計測データとは別に保管し、公開する分析データには含めません。
+  </p>
+  <div class="pf"><label>お名前 <span class="req">*</span></label>
+    <input id="pfName" type="text" autocomplete="name"></div>
+  <div class="pf"><label>メールアドレス <span class="req">*</span></label>
+    <input id="pfMail" type="email" autocomplete="email"></div>
+  <div class="pf"><label>母語 <span class="req">*</span></label>
+    <input id="pfNat" type="text" placeholder="例: 日本語"></div>
+  <div class="pf"><label>その他に使う言語</label>
+    <input id="pfOther" type="text" placeholder="例: 英語（上級）、中国語（初級）"></div>
+  <div class="pf"><label>韓国語 <span class="req">*</span></label>
+    <select id="pfKo">
+      <option value="">— 選択 —</option>
+      <option>ほとんど分からない</option>
+      <option>少し分かる</option>
+      <option>読み書きできる</option>
+      <option>母語話者・それに準じる</option>
+    </select></div>
+  <div class="pf"><label>音声のセグメンテーション経験 <span class="req">*</span></label>
+    <select id="pfExp">
+      <option value="">— 選択 —</option>
+      <option>1年未満</option><option>1〜3年</option>
+      <option>3〜10年</option><option>10年以上</option>
+    </select></div>
+  <p class="hint" style="margin:1em 0 .4em">
+    このリンクはあなた専用です。<b>作業はご本人が最後まで行ってください。</b>
+    途中で担当が変わると、計測者ごとのばらつきを見積もれなくなります。
+  </p>
+  <p class="hint" id="pfErr" style="color:#b91c1c"></p>
+  <div style="text-align:right"><button class="primary" id="pfGo">始める</button></div>
+</dialog>
+
+<dialog id="dlgDone">
+  <h3 style="margin:0 0 .5em">これで終了してよろしいですか</h3>
+  <p id="doneMsg" class="hint" style="margin:0 0 1.2em"></p>
+  <div style="text-align:right;display:flex;gap:8px;justify-content:flex-end">
+    <button class="mini" id="doneBack">まだ見直す</button>
+    <button class="primary" id="doneGo">終了する</button></div>
+</dialog>
+
+<dialog id="dlgDone2">
+  <h3 style="margin:0 0 .5em">本当に終了してよろしいですか</h3>
+  <p style="margin:0 0 .6em">
+    終了すると、<b>記入内容の修正ができなくなります。</b><br>
+    見直しの必要がなければ、そのままお進みください。</p>
+  <p class="hint" style="margin:0 0 1.2em">
+    記入内容はすでに保存されています。終了しても失われません。</p>
+  <div style="text-align:right;display:flex;gap:8px;justify-content:flex-end">
+    <button class="mini" id="done2Back">戻る</button>
+    <button class="primary" id="done2Go">終了する</button></div>
+</dialog>
+
+<dialog id="dlgThanks">
+  <h3 style="margin:0 0 .5em">ありがとうございました</h3>
+  <p style="margin:0 0 .6em">作業は以上です。<b>この画面は閉じていただいて構いません。</b></p>
+  <p class="hint" style="margin:0 0 1.2em">
+    記入内容はすべて保存されています。ご返信は不要です。<br>
+    謝礼は後日、メールでお送りします。</p>
+  <div style="text-align:right"><button class="mini" id="thanksClose">閉じる</button></div>
+</dialog>
+
+<main>
+  <div id="finbar" class="finbar" hidden>
+    <b>作業は終了しました。</b>ご協力ありがとうございました。
+    この画面は閉じていただいて構いません。
+    <span class="hint">修正が必要な場合は、お手数ですが依頼者までご連絡ください。</span>
+  </div>
+
+  <div id="filewarn" class="filewarn" hidden>
+    <b>このままでは作業が保存されません。</b>
+    いったん閉じて、フォルダ内の <b>「はじめに開く」</b>（Mac は
+    <code>はじめに開く_Mac.command</code>、Windows は
+    <code>はじめに開く_Windows.bat</code>）をダブルクリックして開き直してください。
+    そうすると自動保存が効き、パソコンを再起動しても続きから再開できます。
+    <span class="hint">このまま続ける場合は、5件ごとに復旧用ファイルが保存されます。</span>
+  </div>
+
+  <div class="playrow">
+    <button class="playbig" id="playAll" hidden>▶ 音声を再生</button>
+    <button class="mini" id="play" hidden disabled>▶ 選択範囲を再生</button>
+    <span class="hint">波形をドラッグすると、その範囲だけ聞けます</span>
+  </div>
+
+  <div class="step"><span class="num">1</span>全体を見て、対象の閉鎖音を探す
+    <span class="rule">対象は<b>ファイルに最初に現れるバースト</b>。後続の閉鎖音は無視</span></div>
+  <canvas id="overview"></canvas>
+
+  <div class="step"><span class="num">2</span>拡大して波形を確かめる
+    <button class="mini" id="zoomOut">− 縮小</button>
+    <button class="mini" id="zoomIn">＋ 拡大</button>
+    <button class="mini" id="zoomFit">全体表示</button>
+    <button class="mini" id="zoomMark">選択中の線へ</button>
+    <span class="hint" id="zoomInfo"></span></div>
+  <audio id="au" preload="auto"></audio>
+  <canvas id="detail"></canvas>
+
+  <div class="step"><span class="num">3</span>点を2つ置く
+    <span class="hint">枠が付いているほうがクリックで動きます。線は直接ドラッグでも可。</span></div>
+
+  <div class="row">
+    <span class="chip sel act" id="chipB" data-sel="burst"><span class="dot" style="background:var(--burst)"></span>
+      burst <span class="val" id="vb">—</span></span>
+    <button class="mini" data-nudge="burst" data-d="-5">−5 ms</button>
+    <button class="mini" data-nudge="burst" data-d="-1">−1 ms</button>
+    <button class="mini" data-nudge="burst" data-d="1">+1 ms</button>
+    <button class="mini" data-nudge="burst" data-d="5">+5 ms</button>
+    <button class="mini" data-clear="burst">消去</button>
+  </div>
+  <div class="row">
+    <span class="chip sel" id="chipV" data-sel="voi"><span class="dot" style="background:var(--voi)"></span>
+      voicing onset <span class="val" id="vv">—</span></span>
+    <button class="mini" data-nudge="voi" data-d="-5">−5 ms</button>
+    <button class="mini" data-nudge="voi" data-d="-1">−1 ms</button>
+    <button class="mini" data-nudge="voi" data-d="1">+1 ms</button>
+    <button class="mini" data-nudge="voi" data-d="5">+5 ms</button>
+    <button class="mini" data-clear="voi">消去</button>
+  </div>
+  <div class="row alt">
+    <span class="hint" style="margin-right:2px">または</span>
+    <button id="uncBtn">判定不能にする</button>
+    <select id="uncReason">
+      <option value="">— 理由を選択 —</option>
+      <option value="no_burst">no_burst（バーストが同定できない）</option>
+      <option value="no_voicing">no_voicing（有声開始が同定できない）</option>
+      <option value="overlap">overlap（直前の音声と重なる）</option>
+      <option value="noise">noise（雑音・録音不良）</option>
+      <option value="not_a_stop">not_a_stop（対象の閉鎖音が見当たらない）</option>
+      <option value="other">other（その他）</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="hint" id="doneHint"></span>
+  </div>
+
+</main>
+
+<footer>
+  <button id="prev">← 前へ</button>
+  <button id="next" class="primary">次へ →</button>
+  <span class="sp"></span>
+  <span class="hint" id="saved">自動保存されています</span>
+  <span class="hint" id="sync" hidden></span>
+  <!-- 「次へ」の隣に置くと、送り続けた勢いで誤って押す。右端に離す -->
+  <button id="finish2" class="mini">結果を出力</button>
+  <button id="endBtn" class="ready" hidden>✓ 作業を終了する</button>
+</footer>
+
+<dialog id="dlgHelp">
+  <h3 style="margin-top:0">操作説明</h3>
+  <table>
+    <tr><th>操作</th><th>内容</th></tr>
+    <tr><td><span class="k">クリック</span></td><td>選択中（枠が付いているほう）のランドマークをその位置に置く</td></tr>
+    <tr><td><span class="k">線をドラッグ</span></td><td>既にある線をつかんで動かす（赤・青どちらでも）</td></tr>
+    <tr><td><span class="k">burst / voicing onset の枠をクリック</span></td><td>どちらを操作するかを切り替える</td></tr>
+    <tr><td><span class="k">B</span> / <span class="k">V</span></td><td>同上（キーボード）</td></tr>
+    <tr><td><span class="k">←</span> <span class="k">→</span></td><td>1 ms 動かす（Shift で 5 ms）</td></tr>
+    <tr><td><span class="k">＋拡大</span> <span class="k">−縮小</span> ボタン</td><td>拡大・縮小（選択中の線を固定して拡大します）</td></tr>
+    <tr><td><span class="k">全体表示</span> / <span class="k">選択中の線へ</span></td><td>1.2秒全体を表示 / 選択中の線を中央に拡大</td></tr>
+    <tr><td><span class="k">ホイール</span> / <span class="k">+</span> <span class="k">−</span></td><td>同上（キーボード・マウス）</td></tr>
+    <tr><td><span class="k">ドラッグ</span></td><td>横移動</td></tr>
+    <tr><td><span class="k">Enter</span></td><td>次のトークンへ</td></tr>
+    <tr><td><span class="k">U</span></td><td>判定不能</td></tr>
+    <tr><td><span class="k">ドラッグ</span></td><td>その範囲を選択して再生（音声がある版のみ）</td></tr>
+  </table>
+  <p><b>表示について。</b>上段＝波形（全体スケール）、中段＝波形（高利得。
+  弱いバーストを見つけるためのもので、母音部が振り切れるのは正常です）、
+  下段＝スペクトログラム（0–11000 Hz、窓長 5 ms）。</p>
+  <p><b>burst</b> は閉鎖の解放にともなう最初の急峻な立ち上がりの<b>開始点</b>。
+  <b>voicing onset</b> は後続母音の周期性が識別できる<b>最初の周期の開始点</b>。</p>
+  <p><b>数値（ミリ秒）は表示していません。</b>判断が数値に引きずられないようにするためです。
+  精度は線の位置で担保されます（最大まで拡大すると 1 ms が約40画素になります）。
+  測定値は提出時の CSV に記録されています。</p>
+  <p style="color:var(--muted)">作業内容はブラウザ内に自動保存されます。
+  閉じても同じブラウザで開き直せば続きから再開できます。</p>
+  <div class="row"><button onclick="dlgHelp.close()">閉じる</button></div>
+</dialog>
+
+<dialog id="dlgOut">
+  <h3 style="margin-top:0">結果</h3>
+  <p>下のテキストを<b>すべて選択してコピー</b>し、メールに貼り付けて返信してください。
+     （「ファイルとして保存」でも構いません。）</p>
+  <textarea id="out" readonly></textarea>
+  <div class="row">
+    <button id="copy">コピー</button>
+    <button id="dl">ファイルとして保存</button>
+    <button onclick="dlgOut.close()">閉じる</button>
+    <span class="hint" id="outstat"></span>
+  </div>
+</dialog>
+
+<script>
+const AID = "ANNOT01";
+const SYNC_URL = "https://script.google.com/macros/s/AKfycbzbccpJ6HWWtwjosTBrRXqkviXX3hKtqPyjmrs-ZX9ZNy0FYzPY90v4vvIY-wJaUz-p/exec";
+const SYNC_KEY = "k7Qm2x9ZpL";
+const IMG_PX_PER_MS = 4;
+const CLIP_MS = 700;
+const TOKENS = [{"id": "ANNOT01_001", "img": "img/ANNOT01_001.jpg", "audio": "audio/ANNOT01_001.wav"}, {"id": "ANNOT01_002", "img": "img/ANNOT01_002.jpg", "audio": "audio/ANNOT01_002.wav"}, {"id": "ANNOT01_003", "img": "img/ANNOT01_003.jpg", "audio": "audio/ANNOT01_003.wav"}, {"id": "ANNOT01_004", "img": "img/ANNOT01_004.jpg", "audio": "audio/ANNOT01_004.wav"}, {"id": "ANNOT01_005", "img": "img/ANNOT01_005.jpg", "audio": "audio/ANNOT01_005.wav"}, {"id": "ANNOT01_006", "img": "img/ANNOT01_006.jpg", "audio": "audio/ANNOT01_006.wav"}, {"id": "ANNOT01_007", "img": "img/ANNOT01_007.jpg", "audio": "audio/ANNOT01_007.wav"}, {"id": "ANNOT01_008", "img": "img/ANNOT01_008.jpg", "audio": "audio/ANNOT01_008.wav"}, {"id": "ANNOT01_009", "img": "img/ANNOT01_009.jpg", "audio": "audio/ANNOT01_009.wav"}, {"id": "ANNOT01_010", "img": "img/ANNOT01_010.jpg", "audio": "audio/ANNOT01_010.wav"}, {"id": "ANNOT01_011", "img": "img/ANNOT01_011.jpg", "audio": "audio/ANNOT01_011.wav"}, {"id": "ANNOT01_012", "img": "img/ANNOT01_012.jpg", "audio": "audio/ANNOT01_012.wav"}, {"id": "ANNOT01_013", "img": "img/ANNOT01_013.jpg", "audio": "audio/ANNOT01_013.wav"}, {"id": "ANNOT01_014", "img": "img/ANNOT01_014.jpg", "audio": "audio/ANNOT01_014.wav"}, {"id": "ANNOT01_015", "img": "img/ANNOT01_015.jpg", "audio": "audio/ANNOT01_015.wav"}, {"id": "ANNOT01_016", "img": "img/ANNOT01_016.jpg", "audio": "audio/ANNOT01_016.wav"}, {"id": "ANNOT01_017", "img": "img/ANNOT01_017.jpg", "audio": "audio/ANNOT01_017.wav"}, {"id": "ANNOT01_018", "img": "img/ANNOT01_018.jpg", "audio": "audio/ANNOT01_018.wav"}, {"id": "ANNOT01_019", "img": "img/ANNOT01_019.jpg", "audio": "audio/ANNOT01_019.wav"}, {"id": "ANNOT01_020", "img": "img/ANNOT01_020.jpg", "audio": "audio/ANNOT01_020.wav"}, {"id": "ANNOT01_021", "img": "img/ANNOT01_021.jpg", "audio": "audio/ANNOT01_021.wav"}, {"id": "ANNOT01_022", "img": "img/ANNOT01_022.jpg", "audio": "audio/ANNOT01_022.wav"}, {"id": "ANNOT01_023", "img": "img/ANNOT01_023.jpg", "audio": "audio/ANNOT01_023.wav"}, {"id": "ANNOT01_024", "img": "img/ANNOT01_024.jpg", "audio": "audio/ANNOT01_024.wav"}, {"id": "ANNOT01_025", "img": "img/ANNOT01_025.jpg", "audio": "audio/ANNOT01_025.wav"}, {"id": "ANNOT01_026", "img": "img/ANNOT01_026.jpg", "audio": "audio/ANNOT01_026.wav"}, {"id": "ANNOT01_027", "img": "img/ANNOT01_027.jpg", "audio": "audio/ANNOT01_027.wav"}, {"id": "ANNOT01_028", "img": "img/ANNOT01_028.jpg", "audio": "audio/ANNOT01_028.wav"}, {"id": "ANNOT01_029", "img": "img/ANNOT01_029.jpg", "audio": "audio/ANNOT01_029.wav"}, {"id": "ANNOT01_030", "img": "img/ANNOT01_030.jpg", "audio": "audio/ANNOT01_030.wav"}, {"id": "ANNOT01_031", "img": "img/ANNOT01_031.jpg", "audio": "audio/ANNOT01_031.wav"}, {"id": "ANNOT01_032", "img": "img/ANNOT01_032.jpg", "audio": "audio/ANNOT01_032.wav"}, {"id": "ANNOT01_033", "img": "img/ANNOT01_033.jpg", "audio": "audio/ANNOT01_033.wav"}, {"id": "ANNOT01_034", "img": "img/ANNOT01_034.jpg", "audio": "audio/ANNOT01_034.wav"}, {"id": "ANNOT01_035", "img": "img/ANNOT01_035.jpg", "audio": "audio/ANNOT01_035.wav"}, {"id": "ANNOT01_036", "img": "img/ANNOT01_036.jpg", "audio": "audio/ANNOT01_036.wav"}, {"id": "ANNOT01_037", "img": "img/ANNOT01_037.jpg", "audio": "audio/ANNOT01_037.wav"}, {"id": "ANNOT01_038", "img": "img/ANNOT01_038.jpg", "audio": "audio/ANNOT01_038.wav"}, {"id": "ANNOT01_039", "img": "img/ANNOT01_039.jpg", "audio": "audio/ANNOT01_039.wav"}, {"id": "ANNOT01_040", "img": "img/ANNOT01_040.jpg", "audio": "audio/ANNOT01_040.wav"}, {"id": "ANNOT01_041", "img": "img/ANNOT01_041.jpg", "audio": "audio/ANNOT01_041.wav"}, {"id": "ANNOT01_042", "img": "img/ANNOT01_042.jpg", "audio": "audio/ANNOT01_042.wav"}, {"id": "ANNOT01_043", "img": "img/ANNOT01_043.jpg", "audio": "audio/ANNOT01_043.wav"}, {"id": "ANNOT01_044", "img": "img/ANNOT01_044.jpg", "audio": "audio/ANNOT01_044.wav"}, {"id": "ANNOT01_045", "img": "img/ANNOT01_045.jpg", "audio": "audio/ANNOT01_045.wav"}, {"id": "ANNOT01_046", "img": "img/ANNOT01_046.jpg", "audio": "audio/ANNOT01_046.wav"}, {"id": "ANNOT01_047", "img": "img/ANNOT01_047.jpg", "audio": "audio/ANNOT01_047.wav"}, {"id": "ANNOT01_048", "img": "img/ANNOT01_048.jpg", "audio": "audio/ANNOT01_048.wav"}, {"id": "ANNOT01_049", "img": "img/ANNOT01_049.jpg", "audio": "audio/ANNOT01_049.wav"}, {"id": "ANNOT01_050", "img": "img/ANNOT01_050.jpg", "audio": "audio/ANNOT01_050.wav"}, {"id": "ANNOT01_051", "img": "img/ANNOT01_051.jpg", "audio": "audio/ANNOT01_051.wav"}, {"id": "ANNOT01_052", "img": "img/ANNOT01_052.jpg", "audio": "audio/ANNOT01_052.wav"}, {"id": "ANNOT01_053", "img": "img/ANNOT01_053.jpg", "audio": "audio/ANNOT01_053.wav"}, {"id": "ANNOT01_054", "img": "img/ANNOT01_054.jpg", "audio": "audio/ANNOT01_054.wav"}, {"id": "ANNOT01_055", "img": "img/ANNOT01_055.jpg", "audio": "audio/ANNOT01_055.wav"}, {"id": "ANNOT01_056", "img": "img/ANNOT01_056.jpg", "audio": "audio/ANNOT01_056.wav"}, {"id": "ANNOT01_057", "img": "img/ANNOT01_057.jpg", "audio": "audio/ANNOT01_057.wav"}, {"id": "ANNOT01_058", "img": "img/ANNOT01_058.jpg", "audio": "audio/ANNOT01_058.wav"}, {"id": "ANNOT01_059", "img": "img/ANNOT01_059.jpg", "audio": "audio/ANNOT01_059.wav"}, {"id": "ANNOT01_060", "img": "img/ANNOT01_060.jpg", "audio": "audio/ANNOT01_060.wav"}, {"id": "ANNOT01_061", "img": "img/ANNOT01_061.jpg", "audio": "audio/ANNOT01_061.wav"}, {"id": "ANNOT01_062", "img": "img/ANNOT01_062.jpg", "audio": "audio/ANNOT01_062.wav"}, {"id": "ANNOT01_063", "img": "img/ANNOT01_063.jpg", "audio": "audio/ANNOT01_063.wav"}, {"id": "ANNOT01_064", "img": "img/ANNOT01_064.jpg", "audio": "audio/ANNOT01_064.wav"}, {"id": "ANNOT01_065", "img": "img/ANNOT01_065.jpg", "audio": "audio/ANNOT01_065.wav"}, {"id": "ANNOT01_066", "img": "img/ANNOT01_066.jpg", "audio": "audio/ANNOT01_066.wav"}, {"id": "ANNOT01_067", "img": "img/ANNOT01_067.jpg", "audio": "audio/ANNOT01_067.wav"}, {"id": "ANNOT01_068", "img": "img/ANNOT01_068.jpg", "audio": "audio/ANNOT01_068.wav"}, {"id": "ANNOT01_069", "img": "img/ANNOT01_069.jpg", "audio": "audio/ANNOT01_069.wav"}, {"id": "ANNOT01_070", "img": "img/ANNOT01_070.jpg", "audio": "audio/ANNOT01_070.wav"}, {"id": "ANNOT01_071", "img": "img/ANNOT01_071.jpg", "audio": "audio/ANNOT01_071.wav"}, {"id": "ANNOT01_072", "img": "img/ANNOT01_072.jpg", "audio": "audio/ANNOT01_072.wav"}, {"id": "ANNOT01_073", "img": "img/ANNOT01_073.jpg", "audio": "audio/ANNOT01_073.wav"}, {"id": "ANNOT01_074", "img": "img/ANNOT01_074.jpg", "audio": "audio/ANNOT01_074.wav"}, {"id": "ANNOT01_075", "img": "img/ANNOT01_075.jpg", "audio": "audio/ANNOT01_075.wav"}, {"id": "ANNOT01_076", "img": "img/ANNOT01_076.jpg", "audio": "audio/ANNOT01_076.wav"}, {"id": "ANNOT01_077", "img": "img/ANNOT01_077.jpg", "audio": "audio/ANNOT01_077.wav"}, {"id": "ANNOT01_078", "img": "img/ANNOT01_078.jpg", "audio": "audio/ANNOT01_078.wav"}, {"id": "ANNOT01_079", "img": "img/ANNOT01_079.jpg", "audio": "audio/ANNOT01_079.wav"}];
+const KEY = "vot_annot_" + AID;
+
+let idx = 0, active = "burst";
+let view = {start: 0, pxPerMs: 1};
+// localStorage は file:// や data: URL では SecurityError を投げることがある
+// （Safari は file:// で拒否する）。落ちるとスクリプト全体が止まるので必ず保護する。
+let STORE_OK = true;
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(_){ STORE_OK=false; return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(_){ STORE_OK=false; } }
+let state = {};
+try{ state = JSON.parse(lsGet(KEY) || "{}"); }catch(_){ state = {}; }
+const imgs = {};
+
+const ov = document.getElementById("overview"), oc = ov.getContext("2d");
+const dt = document.getElementById("detail"),  dc = dt.getContext("2d");
+
+const au = document.getElementById("au");
+const HAS_AUDIO = TOKENS.length > 0 && !!TOKENS[0].audio;
+let stopAt = null;
+let playPos = null;          // 再生中のみ ms。null なら線を描かない
+let rafId = null;
+function tickPlayhead(){
+  if(au.paused){ playPos = null; rafId = null; draw(); return; }
+  // 停止判定はここで行う。timeupdate は約250ms間隔でしか発火しないため、
+  // 短い選択範囲だと大きく行き過ぎる
+  if(stopAt != null && au.currentTime >= stopAt){
+    clearStop(); au.pause(); stopAt = null; playPos = null; draw(); rafId = null; return;
+  }
+  playPos = au.currentTime * 1000;
+  draw();
+  rafId = requestAnimationFrame(tickPlayhead);
+}
+function startPlayhead(){
+  document.getElementById("playAll").classList.add("playing");
+  if(rafId == null) rafId = requestAnimationFrame(tickPlayhead);
+}
+let stopTimer = null;
+function clearStop(){ if(stopTimer){ clearTimeout(stopTimer); stopTimer = null; } }
+function seekAndPlay(fromSec, toSec){
+  clearStop();
+  const go2 = ()=>{
+    try{ au.currentTime = fromSec; }catch(_){}
+    stopAt = toSec;
+    au.play().then(()=>{
+      // rAF の 16ms 刻みでは短い選択に粗いので、実時間のタイマーでも止める
+      if(toSec != null){
+        const ms = Math.max(0, (toSec - au.currentTime) * 1000);
+        clearStop();
+        stopTimer = setTimeout(()=>{ au.pause(); stopAt = null; stopTimer = null;
+                                     playPos = null; draw(); }, ms);
+      }
+    }).catch(()=>{});
+    startPlayhead();
+  };
+  // readyState < 1 だと currentTime を設定できず、先頭から鳴ってしまう
+  if(au.readyState >= 1) go2();
+  else au.addEventListener("loadedmetadata", go2, {once:true});
+}
+function playAll(){
+  if(!HAS_AUDIO) return;
+  const r = rec(); r.plays = (r.plays||0) + 1; save();
+  seekAndPlay(0, null);
+}
+// ドラッグで選んだ範囲。{a,b} は ms（a<b）。null なら未選択
+let sel = null;
+function setSel(v){
+  sel = v;
+  const b = document.getElementById("play");
+  if(b) b.disabled = !(sel && HAS_AUDIO);
+}
+function playSel(){
+  if(!HAS_AUDIO) return;
+  const r0 = rec(); r0.plays = (r0.plays||0) + 1; save();
+  const a0 = (sel ? Math.max(0, sel.a) : 0)/1000;
+  const a1 = (sel ? Math.min(CLIP_MS, sel.b) : CLIP_MS)/1000;
+  seekAndPlay(a0, a1);
+}
+if(HAS_AUDIO){
+  document.getElementById("play").hidden = false;
+  document.getElementById("playAll").hidden = false;
+  au.addEventListener("pause", ()=>{
+    document.getElementById("playAll").classList.remove("playing"); });
+  au.addEventListener("ended", ()=>{
+    document.getElementById("playAll").classList.remove("playing");
+    playPos = null; draw(); });
+  au.addEventListener("timeupdate", ()=>{ if(stopAt!=null && au.currentTime >= stopAt){ au.pause(); stopAt=null; } });
+}
+function cur(){ return TOKENS[idx]; }
+function rec(){ return state[cur().id] || (state[cur().id] = {}); }
+function save(){ lsSet(KEY, JSON.stringify(state)); if(!STORE_OK){ warnNoSave(); autoDump(); } }
+/** 1トークン分の変更を確定して、サーバにも送る。
+    fromEdit=false は所要時間の記録だけの保存（トークン移動時）。
+    このとき完了確認を予約してはいけない。完了済みのパケットを
+    開き直しただけで「終了してよいですか」が出てしまう */
+function isFinished(){ return !!lsGet(KEY + "_done"); }
+/** 終了後は触れないようにする。押せるのに効かない状態が一番わかりにくい */
+function lockUI(){
+  document.getElementById("finbar").hidden = false;
+  [dt, ov].forEach(c=>{ c.style.pointerEvents = "none"; c.style.opacity = ".55"; });
+  document.querySelectorAll("[data-nudge],[data-clear],#uncBtn,#uncReason,.chip.sel")
+    .forEach(el=>{ el.disabled = true; el.style.pointerEvents = "none";
+                   el.style.opacity = ".5"; });
+  ["gaps","endBtn","finish2"].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.hidden = true; });
+}
+function commit(id, fromEdit){
+  if(isFinished()) return;          // 終了後は記録も送信もしない
+  const r = state[id]; if(r) r.ts = Date.now();
+  save();
+  enqueue(id);
+  if(fromEdit !== false) scheduleDoneAsk();
+}
+
+// 最後の1件を入れた直後にいきなり確認を出すと、まだ微調整している最中に
+// 割り込むことになる。数秒おいてから訊き、その間に手を加えたら数え直す。
+const DONE_DELAY_MS = 4000;
+let doneTimer = null, doneAsked = false;
+function cancelDoneAsk(){
+  if(doneTimer){ clearTimeout(doneTimer); doneTimer = null; }
+}
+function scheduleDoneAsk(){
+  cancelDoneAsk();
+  if(!SYNC_ON || doneAsked || lsGet(KEY + "_done")) return;
+  if(doneCount() !== TOKENS.length) return;
+  doneTimer = setTimeout(()=>{
+    doneTimer = null;
+    if(doneCount() !== TOKENS.length) return;   // 待つあいだに消された
+    doneAsked = true;                            // 自動で訊くのは一度だけ
+    askDone();
+  }, DONE_DELAY_MS);
+}
+
+function loadImg(i){
+  if(i < 0 || i >= TOKENS.length) return;
+  const t = TOKENS[i];
+  if(imgs[t.id]) return imgs[t.id];
+  const im = new Image();
+  im.src = t.img;
+  im.onload = () => { if(i === idx) draw(); };
+  imgs[t.id] = im;
+  return im;
+}
+
+function fitCanvas(c){
+  const r = c.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  if(c.width !== Math.round(r.width*d) || c.height !== Math.round(r.height*d)){
+    c.width = Math.round(r.width*d); c.height = Math.round(r.height*d);
+  }
+  return {w: r.width, h: r.height, d};
+}
+
+function drawMark(ctx, x, h, color, label, d){
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 2*d; ctx.beginPath();
+  ctx.moveTo(x*d, 0); ctx.lineTo(x*d, h*d); ctx.stroke();
+  ctx.fillStyle = color; ctx.font = (12*d)+"px sans-serif";
+  ctx.fillText(label, x*d + 4*d, 14*d);
+  ctx.restore();
+}
+
+// 再生位置。ランドマークと混同されないよう、色も形も別にする（細い灰色の実線）
+function drawPlayhead(ctx, x, h, d){
+  ctx.save();
+  ctx.strokeStyle = "rgba(90,90,90,.85)"; ctx.lineWidth = 1*d;
+  ctx.beginPath(); ctx.moveTo(x*d, 0); ctx.lineTo(x*d, h*d); ctx.stroke();
+  ctx.restore();
+}
+function draw(){
+  const im = imgs[cur().id];
+  const r = rec();
+
+  // ---- 全体 ----
+  const o = fitCanvas(ov);
+  oc.clearRect(0,0,ov.width,ov.height);
+  if(im && im.complete && im.naturalWidth){
+    oc.drawImage(im, 0,0,im.naturalWidth,im.naturalHeight, 0,0,ov.width,ov.height);
+  }
+  const oscale = o.w / CLIP_MS;
+  if(r.burst != null) drawMark(oc, r.burst*oscale, o.h, getCSS("--burst"), "", o.d);
+  if(r.voi   != null) drawMark(oc, r.voi*oscale,   o.h, getCSS("--voi"),   "", o.d);
+  // 現在の拡大範囲
+  oc.save();
+  oc.strokeStyle = getCSS("--muted"); oc.lineWidth = 1*o.d;
+  const vw = (o.w / view.pxPerMs) * oscale;
+  oc.strokeRect(view.start*oscale*o.d, 1, vw*o.d, (o.h-2)*o.d);
+  oc.restore();
+  if(playPos != null) drawPlayhead(oc, playPos*oscale, o.h, o.d);
+
+  // ---- 拡大 ----
+  const dd = fitCanvas(dt);
+  dc.clearRect(0,0,dt.width,dt.height);
+  const minPx = dd.w / CLIP_MS;                 // 全体がちょうど収まる倍率
+  if(!isFinite(view.pxPerMs) || view.pxPerMs < minPx) view.pxPerMs = minPx;
+  const visMs = dd.w / view.pxPerMs;
+  view.start = Math.max(0, Math.min(view.start, CLIP_MS - visMs));
+  if(im && im.complete && im.naturalWidth){
+    const sx = view.start * IMG_PX_PER_MS, sw = visMs * IMG_PX_PER_MS;
+    dc.drawImage(im, sx, 0, sw, im.naturalHeight, 0, 0, dt.width, dt.height);
+  }
+  if(r.burst != null) drawMark(dc,(r.burst-view.start)*view.pxPerMs, dd.h, getCSS("--burst"), "burst", dd.d);
+  if(r.voi   != null) drawMark(dc,(r.voi-view.start)*view.pxPerMs,   dd.h, getCSS("--voi"),   "voicing", dd.d);
+  if(sel){
+    const x0 = (Math.min(sel.a,sel.b) - view.start) * view.pxPerMs;
+    const x1 = (Math.max(sel.a,sel.b) - view.start) * view.pxPerMs;
+    dc.save();
+    dc.fillStyle = "rgba(70,130,180,.20)";
+    dc.fillRect(x0*dd.d, 0, (x1-x0)*dd.d, dd.h*dd.d);
+    dc.strokeStyle = "rgba(70,130,180,.75)"; dc.lineWidth = 1*dd.d;
+    dc.beginPath(); dc.moveTo(x0*dd.d,0); dc.lineTo(x0*dd.d, dd.h*dd.d);
+    dc.moveTo(x1*dd.d,0); dc.lineTo(x1*dd.d, dd.h*dd.d); dc.stroke();
+    dc.restore();
+  }
+  if(playPos != null){
+    const px = (playPos - view.start) * view.pxPerMs;
+    if(px >= 0 && px <= dd.w) drawPlayhead(dc, px, dd.h, dd.d);
+  }
+
+  // ---- 表示更新 ----
+  const nDone = doneCount(), nAll = TOKENS.length, complete = nDone === nAll;
+  document.getElementById("prog").textContent =
+    (idx+1) + " / " + nAll + "　（記入済み " + nDone + "）";
+  // 出力はフッタ右端の1か所だけ。作業途中でも押せるようにしておく
+  // （自動保存が効かない環境では、閉じる前に出力してもらう必要がある）。
+  // 全件終わったときだけ目立たせる
+  // ボタンの名前は実際の動作に合わせる。
+  //  サーバ同期あり: 送信は1件ごとに済んでいる。ここで出すのは控えであり、
+  //                  「送信」と書くと二重に誤解を招く（もう送ってある）
+  //  同期なし      : 書き出したファイルを協力者がメールで送る。「出力」が正しい
+  const fin = document.getElementById("finish2");
+  const sent = SYNC_ON && queue.length === 0;
+  // 全件終わったら、終わりを明示する。ここが無いと「まだ何かあるのか」と迷う
+  // 全件そろっていない状態に戻ったら、予約してある確認は取り消す
+  if(!complete) cancelDoneAsk();
+  const endBtn = document.getElementById("endBtn");
+  endBtn.hidden = !(complete && SYNC_ON);
+  endBtn.classList.toggle("ready", !lsGet(KEY + "_done"));
+  endBtn.textContent = lsGet(KEY + "_done") ? "✓ 終了しました" : "✓ 作業を終了する";
+  fin.classList.toggle("ready", complete && !SYNC_ON);
+  fin.classList.toggle("mini", !(complete && !SYNC_ON));
+  fin.textContent = SYNC_ON ? "ここまでをファイルに保存"
+                            : (complete ? "✓ 結果を出力する" : "結果を出力");
+  // 飛ばした分を探せるようにする。80件のうち数件抜けると、
+  // 手作業で探すのは現実的でない
+  const gapsBtn = document.getElementById("gaps");
+  const gaps = unfilledList();
+  gapsBtn.hidden = gaps.length === 0;
+  gapsBtn.textContent = gaps.length ? "未記入 " + gaps.length + " 件へ →" : "";
+  if(gaps.length){
+    gapsBtn.classList.toggle("ready", complete === false && gaps.length > 0
+                             && idx === TOKENS.length - 1);
+  }
+  const sv = document.getElementById("saved");
+  if(complete && SYNC_ON && sent){
+    sv.textContent = "✓ 全 " + nAll + " 件が終わりました。ありがとうございました。"
+                   + "保存は済んでいますので、ご返信は不要です。";
+    sv.className = "hint allDone";
+  } else if(complete && SYNC_ON && syncStuck()){
+    sv.textContent = "⚠ 保存できていない分があります。通信環境をご確認のうえ、"
+                   + "この画面をしばらく開いたままにしてください。";
+    sv.className = "hint warn";
+  } else if(complete && SYNC_ON){
+    sv.textContent = "保存中です。まもなく完了します。";
+    sv.className = "hint";
+  } else if(!complete && idx === TOKENS.length - 1){
+    sv.textContent = "最後まで来ましたが、未記入が " + unfilledList().length
+                   + " 件あります。「未記入 … へ」で移動できます。";
+    sv.className = "hint warn";
+  } else if(complete && STORE_OK){
+    sv.textContent = "全 " + nAll + " 件が終わりました。「結果を出力」でファイルを保存し、"
+                   + "メールに添付してご返信ください。→";
+    sv.className = "hint allDone";
+  } else if(STORE_OK){
+    sv.textContent = "自動保存されています";
+    sv.className = "hint";
+  }
+  // **数値（ms）は表示しない。** 表示すると
+  //   (i) 韓国語の標準的な VOT 値からの規範的な補正を誘発する
+  //       — 本研究が見たいのはまさに標準から外れたトークンである
+  //   (ii) VOT 値は喉頭クラスを強く予測するため、伏せたはずのクラスが漏れる
+  // 精度は線の見た目の位置で担保される（40 px/ms なら 1ms = 40画素）。
+  document.getElementById("vb").textContent = r.burst!=null ? "設定済み" : "未設定";
+  document.getElementById("vv").textContent = r.voi  !=null ? "設定済み" : "未設定";
+  const ready = !!r.unc || (r.burst != null && r.voi != null);
+  const dh = document.getElementById("doneHint");
+  dh.textContent = ready ? "✓ このトークンは完了です。「次へ」または Enter で進みます。" : "";
+  dh.className = ready ? "hint done" : "hint";
+  document.getElementById("uncBtn").classList.toggle("on", !!r.unc);
+  document.getElementById("uncReason").value = r.reason || "";
+  document.querySelectorAll("[data-nudge]").forEach(b=>{
+    b.style.opacity = (b.dataset.nudge===active) ? 1 : .55;
+  });
+  const visMsNow = dd.w / view.pxPerMs;
+  document.getElementById("zoomInfo").textContent =
+    "表示幅 " + visMsNow.toFixed(0) + " ms（" + view.pxPerMs.toFixed(1) + " px/ms）";
+  document.getElementById("zoomIn").disabled  = view.pxPerMs >= 40;
+  document.getElementById("zoomOut").disabled = view.pxPerMs <= 0.41;
+  document.getElementById("chipB").classList.toggle("act", active==="burst");
+  document.getElementById("chipV").classList.toggle("act", active==="voi");
+}
+let warned = false;
+function warnNoSave(){
+  if(warned) return;
+  warned = true;
+  const el = document.getElementById("saved");
+  el.textContent = "⚠ このブラウザでは自動保存が使えません（Chrome でファイルを直接開いた場合）。"
+                 + "10件ごとに復旧用ファイルが自動保存されます。中断後は「途中から再開」でそれを"
+                 + "読み込んでください。Firefox で開くと自動保存が有効になります";
+  el.style.color = "var(--burst)";
+  el.style.fontWeight = "700";
+}
+/** 解放の直後を作業しやすい倍率で表示する。
+    バーストから後ろに広めに取る（有声開始はその先にあるため）。 */
+function zoomAround(ms){
+  const w = dt.getBoundingClientRect().width || 800;
+  const span = 160;                       // 表示幅 160ms ≒ 1ms が 8px 前後
+  view.pxPerMs = Math.min(40, Math.max(w / CLIP_MS, w / span));
+  view.start = Math.max(0, Math.min(CLIP_MS - w / view.pxPerMs, ms - 40));
+}
+function zoomBy(f){
+  const w = dt.getBoundingClientRect().width;
+  const r = rec();
+  // 選択中のランドマークがあればそこを、無ければ表示中央を固定して拡大する
+  const anchor = (r[active] != null) ? r[active] : view.start + (w/view.pxPerMs)/2;
+  const frac = (anchor - view.start) / (w/view.pxPerMs);
+  const wNow = dt.getBoundingClientRect().width || 1;
+  view.pxPerMs = Math.max(wNow / CLIP_MS, Math.min(40, view.pxPerMs * f));
+  view.start = anchor - frac * (w/view.pxPerMs);
+  draw();
+}
+function zoomFit(){
+  view.pxPerMs = dt.getBoundingClientRect().width / CLIP_MS;
+  view.start = 0; draw();
+}
+function zoomToMark(){
+  const r = rec();
+  const c = (r[active] != null) ? r[active] : (r.burst != null ? r.burst : 300);
+  view.pxPerMs = Math.max(view.pxPerMs, 6);
+  view.start = c - (dt.getBoundingClientRect().width/view.pxPerMs)/2;
+  draw();
+}
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function doneCount(){
+  return TOKENS.filter(t=>{const s=state[t.id]; return s && (s.unc || (s.burst!=null&&s.voi!=null));}).length;
+}
+
+function setMs(which, ms){
+  if(isFinished()) return;
+  const r = rec();
+  r[which] = Math.max(0, Math.min(CLIP_MS, Math.round(ms*10)/10));
+  r.unc = false; r.reason = "";
+  commit(cur().id); draw();
+}
+
+let tEnter = Date.now();
+function go(n){
+  // 直前トークンの所要時間を積算（QC 用）
+  if(TOKENS[idx]){ const r0 = state[TOKENS[idx].id] || (state[TOKENS[idx].id]={});
+    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; commit(TOKENS[idx].id, false); }
+  tEnter = Date.now();
+  idx = Math.max(0, Math.min(TOKENS.length-1, n));
+  const r = rec();
+  // クリップは0.7秒しかないので、初期表示は**全体**にする。
+  // 必要に応じて拡大する。パン操作は基本的に不要。
+  // **初期値としてランドマークは置かない。** 事前配置はアンカリングを生み、
+  // §5.2 の採否判定（セグメント持続時間 ≒ VOT か）を構成上無効にする。
+  const w0 = dt.getBoundingClientRect().width || dt.clientWidth || 800;
+  view.pxPerMs = w0 / CLIP_MS;
+  view.start = 0;
+  active = "burst";
+  if(HAS_AUDIO){ clearStop(); au.pause(); stopAt = null; playPos = null; au.src = TOKENS[idx].audio; }
+  setSel(null);
+  loadImg(idx); loadImg(idx+1); loadImg(idx+2);
+  draw();
+}
+
+// ---- 入力 ----
+function msAt(clientX){
+  const r = dt.getBoundingClientRect();
+  return view.start + (clientX - r.left)/view.pxPerMs;
+}
+// 既存の線の近く（画面上 8px 以内）をつかんだら、その線を選んで動かす
+function hitMarker(clientX){
+  const r = rec(), ms = msAt(clientX), tol = 8/view.pxPerMs;
+  let best = null, bd = Infinity;
+  for(const k of ["burst","voi"]){
+    if(r[k] == null) continue;
+    const d = Math.abs(r[k] - ms);
+    if(d < tol && d < bd){ bd = d; best = k; }
+  }
+  return best;
+}
+dt.addEventListener("pointerdown", e=>{
+  dt.setPointerCapture(e.pointerId);
+  const hit = hitMarker(e.clientX);
+  dt._drag = hit;
+  if(hit){ active = hit; draw(); }
+  dt._x = e.clientX; dt._moved = false; dt._s = view.start;
+  dt._downMs = msAt(e.clientX); dt._pan = e.shiftKey;
+});
+dt.addEventListener("pointermove", e=>{
+  if(e.buttons && dt._drag){ setMs(dt._drag, msAt(e.clientX)); return; }
+  if(!e.buttons){ dt.style.cursor = hitMarker(e.clientX) ? "col-resize" : "crosshair"; return; }
+  if(dt._x == null) return;
+  const dx = e.clientX - dt._x;
+  if(Math.abs(dx) <= 4) return;
+  dt._moved = true;
+  if(dt._pan){ view.start = dt._s - dx/view.pxPerMs; draw(); return; }
+  // 素のドラッグは範囲選択。クリップは 0.7 秒しかなく、既定表示が全体なので
+  // 表示移動より「聞きたいところを選ぶ」ほうが要る（必要なら Shift+ドラッグ）
+  const a = dt._downMs, b = msAt(e.clientX);
+  setSel({a: Math.min(a,b), b: Math.max(a,b)});
+  draw();
+});
+dt.addEventListener("pointerup", e=>{
+  if(dt._drag){ dt._drag = null; dt._x = null; return; }
+  if(dt._moved && !dt._pan && sel && sel.b - sel.a >= 5){ playSel(); dt._x = null; return; }
+  if(!dt._moved){
+    setSel(null);          // 点を置いたら選択は消す（帯が残ると線が見づらい）
+    const wasEmpty = rec()[active] == null;
+    setMs(active, msAt(e.clientX));
+    // 最初に burst を置いたときだけ voicing に自動で進み、**同時に拡大する**。
+    // 既定表示は 1ms ≈ 2px しかなく、そのまま置くと ±5〜10ms の誤差が乗る。
+    // 我々が見ようとしている差は ±2〜3ms なので、拡大しないと測定にならない。
+    // 拡大を任意にすると、多くの人は拡大しないまま置く
+    if(active === "burst" && wasEmpty && rec().voi == null){
+      active = "voi";
+      zoomAround(rec().burst);
+    }
+    draw();
+  }
+  dt._x = null;
+});
+dt.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const r = dt.getBoundingClientRect();
+  const at = view.start + (e.clientX - r.left)/view.pxPerMs;
+  const f = e.deltaY < 0 ? 1.25 : 0.8;
+  const wNow = dt.getBoundingClientRect().width || 1;
+  view.pxPerMs = Math.max(wNow / CLIP_MS, Math.min(40, view.pxPerMs*f));
+  view.start = at - (e.clientX - r.left)/view.pxPerMs;
+  draw();
+}, {passive:false});
+
+ov.addEventListener("click", e=>{
+  const r = ov.getBoundingClientRect();
+  const ms = (e.clientX - r.left)/r.width*CLIP_MS;
+  // 位置を合わせるだけでなく拡大もする。既定表示は 1ms ≈ 2px しかなく、
+  // そのまま点を置くと ±5〜10ms の誤差が乗る（測ろうとしている差は ±2〜3ms）
+  zoomAround(ms + 40);
+  draw();
+});
+
+document.querySelectorAll("[data-nudge]").forEach(b=>b.onclick=()=>{
+  const w = b.dataset.nudge, r = rec();
+  if(r[w]==null) return;
+  setMs(w, r[w] + (+b.dataset.d));
+});
+document.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{
+  if(isFinished()) return;
+  const r = rec(); delete r[b.dataset.clear]; commit(cur().id); draw();
+});
+document.getElementById("uncBtn").onclick = ()=>{
+  if(isFinished()) return;
+  const r = rec(); r.unc = !r.unc;
+  if(r.unc){ delete r.burst; delete r.voi; }
+  commit(cur().id); draw();
+};
+document.getElementById("uncReason").onchange = e=>{
+  if(isFinished()) return;
+  const r = rec(); r.reason = e.target.value; if(r.reason) r.unc = true;
+  commit(cur().id); draw();
+};
+document.querySelectorAll(".chip.sel").forEach(c=>c.onclick=()=>{
+  active = c.dataset.sel; draw();
+});
+document.getElementById("prev").onclick = ()=>go(idx-1);
+document.getElementById("next").onclick = ()=>go(idx+1);
+document.getElementById("zoomIn").onclick   = ()=>zoomBy(1.5);
+document.getElementById("zoomOut").onclick  = ()=>zoomBy(1/1.5);
+document.getElementById("zoomFit").onclick  = zoomFit;
+document.getElementById("zoomMark").onclick = zoomToMark;
+document.getElementById("play").onclick = ()=>playSel();
+document.getElementById("playAll").onclick = ()=>playAll();
+document.getElementById("help").onclick = ()=>dlgHelp.showModal();
+
+addEventListener("keydown", e=>{
+  const tag = e.target.tagName;
+  if(tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA"
+     || document.querySelector("dialog[open]")) return;
+  const r = rec();
+  if(e.key === "b" || e.key === "B"){ active="burst"; draw(); }
+  else if(e.key === "v" || e.key === "V"){ active="voi"; draw(); }
+  else if(e.key === "u" || e.key === "U"){ document.getElementById("uncBtn").click(); }
+  else if(e.key === "Enter"){ go(idx+1); }
+  else if(e.key === "ArrowLeft" || e.key === "ArrowRight"){
+    e.preventDefault();
+    if(r[active]==null) return;
+    setMs(active, r[active] + (e.key==="ArrowRight"?1:-1)*(e.shiftKey?5:1));
+  } else if(e.key === "+" || e.key === "="){ zoomBy(1.5); }
+  else if(e.key === "-"){ zoomBy(1/1.5); }
+});
+addEventListener("resize", draw);
+if(window.ResizeObserver) new ResizeObserver(()=>draw()).observe(dt);
+
+// ---- 出力 ----
+function csv(){
+  const L = ["annotator,presentation_no,token_id,burst_ms,voicing_onset_ms,vot_ms,uncodable,reason,seconds_spent,plays"];
+  for(let i=0;i<TOKENS.length;i++){
+    const t = TOKENS[i], s = state[t.id] || {};
+    const b = s.burst!=null ? s.burst.toFixed(1) : "";
+    const v = s.voi  !=null ? s.voi.toFixed(1)   : "";
+    const vot = (s.burst!=null && s.voi!=null) ? (s.voi-s.burst).toFixed(1) : "";
+    L.push([AID, String(i+1).padStart(3,"0"), t.id, b, v, vot,
+            s.unc?1:0, s.reason||"", (s.secs||0).toFixed(1), s.plays||0].join(","));
+  }
+  return L.join("\n");
+}
+function openOut(){
+  // 最後の1件の所要時間をここで確定させる。go() は遷移時にしか積まないため、
+  // このひと手間が無いと最終トークンの計測が抜ける。
+  if(TOKENS[idx]){ const r0 = state[TOKENS[idx].id] || (state[TOKENS[idx].id]={});
+    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; tEnter = Date.now(); save(); }
+  document.getElementById("out").value = csv();
+  const nd = doneCount(), na = TOKENS.length;
+  const st = document.getElementById("outstat");
+  st.textContent = nd === na ? "✓ 全 " + na + " 件が記入済みです"
+                             : "⚠ 未記入が " + (na-nd) + " 件あります（" + nd + " / " + na + "）";
+  st.className = nd === na ? "hint allDone" : "hint";
+  dlgOut.showModal();
+}
+document.getElementById("finish2").onclick = openOut;
+document.getElementById("endBtn").onclick = askDone;
+document.getElementById("copy").onclick = async ()=>{
+  const ta = document.getElementById("out");
+  ta.select();
+  try{ await navigator.clipboard.writeText(ta.value); }catch(_){ document.execCommand("copy"); }
+  document.getElementById("outstat").textContent = "コピーしました";
+};
+document.getElementById("dl").onclick = ()=>{
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv()], {type:"text/csv"}));
+  a.download = "results_" + AID + ".csv"; a.click();
+};
+
+// ---- 途中から再開 ----
+// file:// では Chrome が localStorage を拒む（各ファイルが別オリジン扱い）ため、
+// 自動保存に頼れない。書き出した CSV をそのまま読み戻せるようにする。
+// 提出用ファイルと保存ファイルを兼ねるので、余計な形式を増やさない。
+function restoreFromCsv(text){
+  const lines = text.split(/\r?\n/).filter(x=>x.trim());
+  if(!lines.length) return {n:0, err:"空のファイルです"};
+  const head = lines[0].split(",").map(x=>x.trim());
+  const col = n => head.indexOf(n);
+  const ci = {id:col("token_id"), b:col("burst_ms"), v:col("voicing_onset_ms"),
+              u:col("uncodable"), r:col("reason"), s:col("seconds_spent"), p:col("plays")};
+  if(ci.id < 0) return {n:0, err:"token_id の列が見つかりません"};
+  const known = new Set(TOKENS.map(t=>t.id));
+  let n = 0, foreign = 0;
+  for(let i=1;i<lines.length;i++){
+    const f = lines[i].split(",");
+    const id = (f[ci.id]||"").trim();
+    if(!id) continue;
+    if(!known.has(id)){ foreign++; continue; }
+    const num = j => (j>=0 && f[j] !== undefined && f[j].trim() !== "") ? parseFloat(f[j]) : null;
+    const b = num(ci.b), v = num(ci.v), u = num(ci.u);
+    const rec2 = {};
+    if(b != null) rec2.burst = b;
+    if(v != null) rec2.voi = v;
+    if(u === 1){ rec2.unc = true; rec2.reason = (ci.r>=0 ? (f[ci.r]||"").trim() : ""); }
+    const sec = num(ci.s), pl = num(ci.p);
+    if(sec != null) rec2.secs = sec;
+    if(pl != null) rec2.plays = pl;
+    if(!Object.keys(rec2).length) continue;
+    state[id] = rec2;
+    // 所要時間だけの行（未記入）は「読み込んだ件数」に数えない
+    if(rec2.unc || (rec2.burst != null && rec2.voi != null)) n++;
+  }
+  save();
+  return {n, foreign};
+}
+/** 作業終了の申告。データは1件ごとに保存済みなので「送信」ではなく
+    「終了してよいか」を確かめる。終わりが明示されないと、
+    まだ何か必要なのかと迷わせる。 */
+function askDone(){
+  const n = doneCount(), na = TOKENS.length, unc = TOKENS.filter(t=>(state[t.id]||{}).unc).length;
+  document.getElementById("doneMsg").innerHTML =
+    "全 " + na + " 件のうち <b>" + n + " 件</b>にご記入いただきました"
+    + (unc ? "（うち判定不能 " + unc + " 件）" : "") + "。<br>"
+    + "記入内容は<b>すでに保存されています</b>ので、ここで送信する操作はありません。";
+  dlgDone.showModal();
+}
+document.getElementById("doneBack").onclick = ()=>dlgDone.close();
+document.getElementById("doneGo").onclick = ()=>{ dlgDone.close(); dlgDone2.showModal(); };
+document.getElementById("done2Back").onclick = ()=>{ dlgDone2.close(); dlgDone.showModal(); };
+document.getElementById("done2Go").onclick = ()=>{
+  if(SYNC_ON){
+    fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify({key:SYNC_KEY, kind:"done", annotator:AID,
+                            n_filled:doneCount(), n_total:TOKENS.length})}).catch(()=>{});
+  }
+  lsSet(KEY + "_done", "1");
+  cancelDoneAsk();
+  lockUI(); draw();
+  dlgDone2.close(); dlgThanks.showModal();
+};
+document.getElementById("thanksClose").onclick = ()=>dlgThanks.close();
+
+document.getElementById("gaps").onclick = ()=>{
+  const gaps = unfilledList();
+  if(!gaps.length) return;
+  const next = gaps.find(i => i > idx);
+  go(next === undefined ? gaps[0] : next);
+};
+document.getElementById("resume").onclick = ()=>document.getElementById("resumeFile").click();
+document.getElementById("resumeFile").onchange = (e)=>{
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    const res = restoreFromCsv(String(rd.result));
+    if(res.err){ alert("読み込めませんでした: " + res.err); return; }
+    if(res.foreign){
+      alert("別のパケットの結果のようです（" + res.foreign + " 件が一致しません）。\n"
+            + "読み込めたのは " + res.n + " 件です。");
+    }
+    // 最初の未記入トークンへ飛ぶ
+    let k = TOKENS.findIndex(t=>{ const st = state[t.id];
+      return !(st && (st.unc || (st.burst!=null && st.voi!=null))); });
+    if(k < 0) k = TOKENS.length - 1;
+    go(k);
+    alert(res.n + " 件を読み込みました。" + (k>=0 ? (k+1) + " 件目から再開します。" : ""));
+  };
+  rd.readAsText(f);
+  e.target.value = "";
+};
+
+// ---- 開き直したときに続きから始める ----
+// 保存が効く環境（Firefox の file://、または http で配信した場合）では、
+// 保存済みの state がそのまま読み込まれるので、最初の未記入トークンへ飛ぶだけでよい。
+// 順序（voicing_onset > burst）は手続き書 §5.2 の定義だが、画面では警告しない。
+// 専門家の判断に割り込まないため。逆転していれば負の VOT として記録に残るので、
+// 分析時に見分けられる。前有声化はチェック欄で別に取る
+function isFilled(t){
+  const st = state[t.id];
+  return !!(st && (st.unc || (st.burst != null && st.voi != null)));
+}
+/** 未記入のトークン番号（0起点）を全部返す */
+function unfilledList(){
+  return TOKENS.map((t, i) => isFilled(t) ? -1 : i).filter(i => i >= 0);
+}
+function firstUnfilled(){
+  const k = TOKENS.findIndex(t => !isFilled(t));
+  return k < 0 ? TOKENS.length - 1 : k;
+}
+
+// ---- 保存が効かない環境での退避 ----
+// Chrome の file:// は各ファイルを別オリジン扱いにするため localStorage を拒む。
+// その場合は一定件数ごとに復旧用ファイルを自動で書き出す。
+// 開き直したあと「途中から再開」でそれを読めば続きに戻れる。
+let lastDump = 0;
+function autoDump(){
+  if(STORE_OK) return;
+  const n = doneCount();
+  if(n === 0 || n === lastDump || n % 5 !== 0) return;
+  lastDump = n;
+  try{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv()], {type:"text/csv"}));
+    a.download = "progress_" + AID + ".csv"; a.click();
+  }catch(_){}
+}
+
+// file:// で開かれている＝保存領域が無い可能性が高い。開始時に大きく知らせる
+if(isFinished()) lockUI();
+if(location.protocol === "file:"){
+  const fw = document.getElementById("filewarn");
+  if(fw) fw.hidden = false;
+}
+
+// ---- 1件ごとにサーバへ保存する ----
+// ブラウザの保存領域に依存しないので、`file://` でも、別のパソコンでも、
+// 途中で電源が落ちても、続きから再開できる（decisions (167)）。
+// 通信が切れているあいだは手元に溜めて、回復したら順に送る。
+const SYNC_ON = !!SYNC_URL && SYNC_URL.indexOf("http") === 0;
+let queue = [];
+try{ queue = JSON.parse(lsGet(KEY + "_q") || "[]"); }catch(_){ queue = []; }
+let sending = false;
+
+let pendingSince = null;      // 送れない状態が続き始めた時刻
+const STUCK_MS = 30000;       // これを超えたら黙っていない
+function syncStuck(){
+  return pendingSince != null && Date.now() - pendingSince > STUCK_MS;
+}
+function syncBadge(){
+  const el = document.getElementById("sync");
+  if(!SYNC_ON){ el.hidden = true; return; }
+  el.hidden = false;
+  // 協力者に見せるのは「保存されているか」だけでよい。
+  // 送信キューの件数や「サーバ」という語は内部事情であり、
+  // しかも本人には対処のしようがない。
+  if(syncStuck()){
+    el.textContent = "⚠ 保存できていません。通信環境をご確認ください";
+    el.className = "hint warn";
+  }else if(queue.length || sending){
+    el.textContent = "保存中…";
+    el.className = "hint";
+  }else{
+    el.textContent = "✓ 保存されています";
+    el.className = "hint allDone";
+  }
+  // 保存が滞っているときだけ、手元にファイルとして残す手段を出す
+  const fin = document.getElementById("finish2");
+  if(fin) fin.hidden = SYNC_ON && !syncStuck();
+}
+
+function payload(id){
+  const s2 = state[id] || {};
+  return {key: SYNC_KEY, annotator: AID, token_id: id,
+          burst_ms: s2.burst != null ? +s2.burst.toFixed(1) : null,
+          voicing_onset_ms: s2.voi != null ? +s2.voi.toFixed(1) : null,
+          vot_ms: (s2.burst != null && s2.voi != null) ? +(s2.voi - s2.burst).toFixed(1) : null,
+          uncodable: !!s2.unc, reason: s2.reason || "",
+          seconds_spent: +(s2.secs || 0).toFixed(1), plays: s2.plays || 0,
+          client_ts: s2.ts || 0};
+}
+
+// 直近に送った内容。値が変わっていないのに送り続けると、シートが
+// 同じ行で埋まる（10件のテストで100行超。本番なら数千行になる）
+const lastSent = {};
+function sig(pl){
+  return [pl.burst_ms, pl.voicing_onset_ms, pl.uncodable, pl.reason].join("|");
+}
+function enqueue(id){
+  if(!SYNC_ON) return;
+  const pl = payload(id), prev = lastSent[id];
+  // 値が同じなら送らない。ただし所要時間が 20 秒以上伸びていれば
+  // 記録を更新する（計測時間は報告に使うので、放っておけない）
+  if(prev && sig(prev) === sig(pl) && (pl.seconds_spent - prev.seconds_spent) < 20) return;
+  lastSent[id] = pl;
+  queue = queue.filter(x => x.token_id !== id);   // 同じトークンは最新だけ送る
+  queue.push(pl);
+  lsSet(KEY + "_q", JSON.stringify(queue));
+  syncBadge();
+  flush();
+}
+
+function flush(){
+  if(!SYNC_ON || sending || !queue.length) return;
+  sending = true;
+  if(pendingSince == null) pendingSince = Date.now();
+  syncBadge();
+  const item = queue[0];
+  // Content-Type を text/plain にしてプリフライトを起こさない
+  // （Apps Script は OPTIONS に応答できない）
+  fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                   body: JSON.stringify(item)})
+    .then(r => r.json()).catch(()=>null)
+    .then(res => {
+      sending = false;
+      if(res && res.ok){
+        queue = queue.filter(x => x !== item);
+        lsSet(KEY + "_q", JSON.stringify(queue));
+        if(!queue.length) pendingSince = null;
+        syncBadge();
+        if(queue.length) flush();
+      }else{
+        syncBadge();
+        setTimeout(flush, 5000);        // 通信断・エラーは待って再送
+        setTimeout(syncBadge, STUCK_MS); // 滞ったら知らせる
+      }
+    });
+}
+addEventListener("online", flush);
+
+/** 起動時にサーバから自分の記録を取り戻す。手元と重なる場合は新しいほうを採る。 */
+/** 自動で戻せないときだけ、手動の復旧手段を出す。
+    自動復元が効いているなら、押す機会のないボタンは置かない。 */
+function showManualResume(why){
+  const b = document.getElementById("resume");
+  if(b){ b.hidden = false; b.title = why || ""; }
+}
+/** 冒頭アンケート。済んでいれば出さない。 */
+/** 初回だけ、挨拶と手順を先に出す。いきなり個人情報を訊かない */
+function askWelcome(done){
+  document.getElementById("wcN").textContent = TOKENS.length;
+  const dlg = document.getElementById("dlgWelcome");
+  dlg.showModal();
+  document.getElementById("wcGo").onclick = ()=>{ dlg.close(); done(); };
+}
+function askProfile(done){
+  const dlg = document.getElementById("dlgProfile");
+  const g = id => document.getElementById(id).value.trim();
+  dlg.showModal();
+  document.getElementById("pfGo").onclick = ()=>{
+    const need = {pfName:"お名前", pfMail:"メールアドレス", pfNat:"母語",
+                  pfKo:"韓国語", pfExp:"セグメンテーション経験"};
+    const miss = Object.keys(need).filter(k => !g(k));
+    if(miss.length){
+      document.getElementById("pfErr").textContent =
+        "未記入: " + miss.map(k=>need[k]).join("、"); return;
+    }
+    const body = {key: SYNC_KEY, kind: "profile", annotator: AID,
+      name: g("pfName"), email: g("pfMail"), native_lang: g("pfNat"),
+      other_langs: g("pfOther"), korean: g("pfKo"), experience: g("pfExp")};
+    lsSet(KEY + "_pf", "1");
+    if(SYNC_ON){
+      fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                       body: JSON.stringify(body)}).catch(()=>{});
+    }
+    dlg.close(); done();
+  };
+}
+
+function pullThenStart(){
+  // サーバ同期が無い場合、頼れるのはブラウザの保存だけ。
+  // それが使えない環境では手動の復旧を出しておく
+  const start = ()=>{ go(firstUnfilled()); };
+  if(!SYNC_ON){
+    if(!STORE_OK) showManualResume("このブラウザでは自動保存が使えません");
+    if(lsGet(KEY + "_pf")) start(); else askWelcome(()=>askProfile(start));
+    return;
+  }
+  syncBadge();
+  const u = SYNC_URL + (SYNC_URL.indexOf("?") < 0 ? "?" : "&")
+          + "annotator=" + encodeURIComponent(AID) + "&key=" + encodeURIComponent(SYNC_KEY);
+  fetch(u).then(r => r.json()).catch(()=>null).then(res => {
+    let n = 0;
+    if(res && res.ok && res.rows){
+      const known = new Set(TOKENS.map(t=>t.id));
+      res.rows.forEach(r2 => {
+        if(!known.has(r2.token_id)) return;
+        const cur = state[r2.token_id];
+        if(cur && (cur.ts || 0) >= (r2.client_ts || 0)) return;  // 手元のほうが新しい
+        const rec2 = {ts: r2.client_ts || 0};
+        if(r2.burst_ms != null) rec2.burst = r2.burst_ms;
+        if(r2.voicing_onset_ms != null) rec2.voi = r2.voicing_onset_ms;
+        if(r2.uncodable){ rec2.unc = true; rec2.reason = r2.reason || ""; }
+        rec2.secs = r2.seconds_spent || 0; rec2.plays = r2.plays || 0;
+        state[r2.token_id] = rec2;
+        if(rec2.unc || (rec2.burst != null && rec2.voi != null)) n++;
+      });
+      save();
+    }
+    if(!res || !res.ok){
+      // サーバから取り戻せなかった。手元に何も無ければ復旧手段が要る
+      showManualResume("サーバに接続できませんでした");
+      if(doneCount() === 0)
+        setTimeout(()=>alert("サーバに接続できませんでした。\n"
+          + "これまでの記録がある場合は「ファイルから再開」で読み込んでください。\n"
+          + "無い場合はそのままお進みください（入力は後で自動的に送信されます）。"), 100);
+    }
+    syncBadge();
+    // サーバ側にアンケートがあれば、別のパソコンで開いても二度聞かない
+    const asked = (res && res.profile) || lsGet(KEY + "_pf");
+    const go2 = ()=>{ go(firstUnfilled());
+      if(n) setTimeout(()=>alert("前回の続きから再開します（" + n + " 件を復元）。"), 100); };
+    if(asked){ lsSet(KEY + "_pf", "1"); go2(); } else { askWelcome(()=>askProfile(go2)); }
+  });
+}
+
+lsSet(KEY + "_probe", "1");
+if(!STORE_OK) warnNoSave();
+pullThenStart();
+</script>
+</body>
+</html>
