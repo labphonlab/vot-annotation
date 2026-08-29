@@ -1,0 +1,877 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VOTの手計測 — ANNOT02</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#16181d; --muted:#5b6270; --line:#d7dbe2;
+    --burst:#c62828; --voi:#1565c0; --unc:#8d6e00; --panel:#f6f7f9; --accent:#0b6b5e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161a; --fg:#e8eaee; --muted:#9aa2b1; --line:#2c313a;
+      --panel:#1b1e24; --burst:#ff6b6b; --voi:#69a7ff; --unc:#e0b64a; --accent:#4dd6c1;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+       font:15px/1.6 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif}
+  header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+         padding:10px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;
+         background:var(--bg);z-index:5}
+  h1{font-size:15px;margin:0;font-weight:650}
+  .sp{flex:1}
+  .prog{font-variant-numeric:tabular-nums;color:var(--muted)}
+  /* 下余白は footer の実高から JS で決める。ここの値は JS が動く前の保険。
+     footer は折り返すうえ、保存警告が出ると伸びるので固定値だと下が隠れる */
+  /* 1画面に収める。110件を繰り返す作業でスクロールが要ると、
+     下の操作を見落とす事故が起きる（実際に起きた）。
+     波形が残りの高さを全部取り、それ以外は必要な分だけ。
+     窓が極端に低いときだけ main の中でスクロールする */
+  main{padding:8px 16px 10px;max-width:1500px;margin:0 auto;width:100%;
+       box-sizing:border-box;flex:1 1 auto;min-height:0;overflow:auto;
+       display:flex;flex-direction:column;gap:0}
+  main > *{flex:none}
+  canvas{width:100%;display:block;background:var(--panel);
+         border:1px solid var(--line);border-radius:6px;touch-action:none;cursor:crosshair}
+  #overview{height:58px;margin-bottom:4px;cursor:pointer}
+  #detail{flex:1 1 0;min-height:150px;height:auto}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+  button{font:inherit;padding:7px 13px;border:1px solid var(--line);border-radius:6px;
+         background:var(--panel);color:var(--fg);cursor:pointer}
+  button:hover{border-color:var(--muted)}
+  button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.mini{padding:5px 9px;font-size:13px}
+  .val{font-weight:600;min-width:64px;display:inline-block;font-size:13px;color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;
+        border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .chip.sel{cursor:pointer;user-select:none}
+  .chip.sel.act{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;font-weight:650}
+  .hint{color:var(--muted);font-size:13px}
+  select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:6px;
+         background:var(--panel);color:var(--fg)}
+  footer{flex:none;background:var(--bg);
+         border-top:1px solid var(--line);padding:7px 16px;display:flex;gap:10px;
+         align-items:center;flex-wrap:wrap}
+  textarea{width:100%;height:230px;font:12px/1.45 ui-monospace,Menlo,monospace;
+           border:1px solid var(--line);border-radius:6px;padding:9px;
+           background:var(--panel);color:var(--fg)}
+  dialog{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);
+         max-width:760px;width:92%;padding:20px}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  .k{display:inline-block;border:1px solid var(--line);border-radius:4px;
+     padding:1px 6px;font-size:12px;background:var(--panel)}
+  .step{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+        margin:9px 0 4px;font-size:13px;color:var(--muted)}
+  .step:first-child{margin-top:2px}
+  .num{display:inline-flex;align-items:center;justify-content:center;
+       width:20px;height:20px;border-radius:50%;background:var(--accent);color:#fff;
+       font-size:12px;font-weight:700;flex:none}
+  .row.alt{margin-top:4px;padding-top:7px;border-top:1px dashed var(--line)}
+  /* 7割以上のクリップに別の閉鎖音のバーストが入る。手順書を最初に一度読むだけでは
+     忘れるので、毎トークン目に入る位置に出しておく */
+  .filewarn{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
+            padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
+  .filewarn code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+  .rule{font-size:12px;color:var(--fg);background:#fdf6e3;border:1px solid #e6d9a8;
+        border-radius:5px;padding:2px 8px}
+  .rule b{font-weight:700}
+  .done{color:var(--accent);font-weight:650}
+  .warn{color:#b45309;font-weight:650}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:650}
+  /* 最初に押すボタン。迷わせないよう、他より明らかに大きく目立たせる */
+  .playrow{display:flex;align-items:center;gap:10px;margin:4px 0 2px}
+  .playbig{background:var(--accent);color:#fff;border:1px solid var(--accent);
+           font-weight:700;font-size:15px;padding:8px 18px;border-radius:8px;cursor:pointer}
+  .playbig:hover{filter:brightness(1.08)}
+  .playbig.playing{animation:pulse 1.2s ease-in-out infinite}
+  /* 全件終わったら「結果を出力」を目立たせる。送り忘れが一番困る失敗なので */
+  button.ready{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700;
+               animation:pulse 1.7s ease-in-out infinite}
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent)}
+    50%    {box-shadow:0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent)}
+  }
+  @media (prefers-reduced-motion: reduce){ button.ready{animation:none} }
+  .allDone{color:var(--accent);font-weight:700}
+  table{border-collapse:collapse;font-size:14px}
+  td,th{border:1px solid var(--line);padding:5px 9px;text-align:left}
+</style>
+</head>
+<body>
+<header>
+  <h1>VOTの手計測</h1>
+  <span class="prog" id="prog">– / –</span>
+  <span class="sp"></span>
+  <button class="mini" id="resume">途中から再開</button>
+  <input type="file" id="resumeFile" accept=".csv,text/csv" hidden>
+  <button class="mini" id="help">操作説明</button>
+</header>
+
+<main>
+  <div id="filewarn" class="filewarn" hidden>
+    <b>このままでは作業が保存されません。</b>
+    いったん閉じて、フォルダ内の <b>「はじめに開く」</b>（Mac は
+    <code>はじめに開く_Mac.command</code>、Windows は
+    <code>はじめに開く_Windows.bat</code>）をダブルクリックして開き直してください。
+    そうすると自動保存が効き、パソコンを再起動しても続きから再開できます。
+    <span class="hint">このまま続ける場合は、5件ごとに復旧用ファイルが保存されます。</span>
+  </div>
+
+  <div class="playrow">
+    <button class="playbig" id="playAll" hidden>▶ 音声を聞く</button>
+  </div>
+
+  <div class="step"><span class="num">1</span>全体を見て、対象の閉鎖音を探す
+    <span class="rule">対象は<b>最初のバースト</b>（冒頭の無音の直後）。後続の閉鎖音は無視</span></div>
+  <canvas id="overview"></canvas>
+
+  <div class="step"><span class="num">2</span>拡大して波形を確かめる
+    <button class="mini" id="zoomOut">− 縮小</button>
+    <button class="mini" id="zoomIn">＋ 拡大</button>
+    <button class="mini" id="zoomFit">全体表示</button>
+    <button class="mini" id="zoomMark">選択中の線へ</button>
+    <button class="mini" id="play" hidden disabled>▶ 選択範囲を再生</button>
+    <span class="hint" id="zoomInfo"></span></div>
+  <audio id="au" preload="auto"></audio>
+  <canvas id="detail"></canvas>
+
+  <div class="step"><span class="num">3</span>点を2つ置く
+    <span class="hint">枠が付いているほうがクリックで動きます。線は直接ドラッグでも可。</span></div>
+
+  <div class="row">
+    <span class="chip sel act" id="chipB" data-sel="burst"><span class="dot" style="background:var(--burst)"></span>
+      burst <span class="val" id="vb">—</span></span>
+    <button class="mini" data-nudge="burst" data-d="-5">−5</button>
+    <button class="mini" data-nudge="burst" data-d="-1">−1</button>
+    <button class="mini" data-nudge="burst" data-d="1">+1</button>
+    <button class="mini" data-nudge="burst" data-d="5">+5</button>
+    <button class="mini" data-clear="burst">消去</button>
+  </div>
+  <div class="row">
+    <span class="chip sel" id="chipV" data-sel="voi"><span class="dot" style="background:var(--voi)"></span>
+      voicing onset <span class="val" id="vv">—</span></span>
+    <button class="mini" data-nudge="voi" data-d="-5">−5</button>
+    <button class="mini" data-nudge="voi" data-d="-1">−1</button>
+    <button class="mini" data-nudge="voi" data-d="1">+1</button>
+    <button class="mini" data-nudge="voi" data-d="5">+5</button>
+    <button class="mini" data-clear="voi">消去</button>
+  </div>
+  <div class="row alt">
+    <span class="hint" style="margin-right:2px">または</span>
+    <button id="uncBtn">判定不能にする</button>
+    <select id="uncReason">
+      <option value="">— 理由を選択 —</option>
+      <option value="no_burst">no_burst（バーストが同定できない）</option>
+      <option value="no_voicing">no_voicing（有声開始が同定できない）</option>
+      <option value="overlap">overlap（直前の音声と重なる）</option>
+      <option value="noise">noise（雑音・録音不良）</option>
+      <option value="not_a_stop">not_a_stop（対象の閉鎖音が見当たらない）</option>
+      <option value="other">other（その他）</option>
+    </select>
+  </div>
+  <div class="row">
+    <span class="hint" id="doneHint"></span>
+  </div>
+
+</main>
+
+<footer>
+  <button id="prev">← 前へ</button>
+  <button id="next" class="primary">次へ →</button>
+  <span class="sp"></span>
+  <span class="hint" id="saved">自動保存されています</span>
+  <span class="hint" id="sync" hidden></span>
+  <!-- 「次へ」の隣に置くと、送り続けた勢いで誤って押す。右端に離す -->
+  <button id="finish2" class="mini">結果を出力</button>
+</footer>
+
+<dialog id="dlgHelp">
+  <h3 style="margin-top:0">操作説明</h3>
+  <table>
+    <tr><th>操作</th><th>内容</th></tr>
+    <tr><td><span class="k">クリック</span></td><td>選択中（枠が付いているほう）のランドマークをその位置に置く</td></tr>
+    <tr><td><span class="k">線をドラッグ</span></td><td>既にある線をつかんで動かす（赤・青どちらでも）</td></tr>
+    <tr><td><span class="k">burst / voicing onset の枠をクリック</span></td><td>どちらを操作するかを切り替える</td></tr>
+    <tr><td><span class="k">B</span> / <span class="k">V</span></td><td>同上（キーボード）</td></tr>
+    <tr><td><span class="k">←</span> <span class="k">→</span></td><td>1 ms 動かす（Shift で 5 ms）</td></tr>
+    <tr><td><span class="k">＋拡大</span> <span class="k">−縮小</span> ボタン</td><td>拡大・縮小（選択中の線を固定して拡大します）</td></tr>
+    <tr><td><span class="k">全体表示</span> / <span class="k">選択中の線へ</span></td><td>1.2秒全体を表示 / 選択中の線を中央に拡大</td></tr>
+    <tr><td><span class="k">ホイール</span> / <span class="k">+</span> <span class="k">−</span></td><td>同上（キーボード・マウス）</td></tr>
+    <tr><td><span class="k">ドラッグ</span></td><td>横移動</td></tr>
+    <tr><td><span class="k">Enter</span></td><td>次のトークンへ</td></tr>
+    <tr><td><span class="k">U</span></td><td>判定不能</td></tr>
+    <tr><td><span class="k">ドラッグ</span></td><td>その範囲を選択して再生（音声がある版のみ）</td></tr>
+  </table>
+  <p><b>表示について。</b>上段＝波形（全体スケール）、中段＝波形（高利得。
+  弱いバーストを見つけるためのもので、母音部が振り切れるのは正常です）、
+  下段＝スペクトログラム（0–11000 Hz、窓長 5 ms）。</p>
+  <p><b>burst</b> は閉鎖の解放にともなう最初の急峻な立ち上がりの<b>開始点</b>。
+  <b>voicing onset</b> は後続母音の周期性が識別できる<b>最初の周期の開始点</b>。</p>
+  <p><b>数値（ミリ秒）は表示していません。</b>判断が数値に引きずられないようにするためです。
+  精度は線の位置で担保されます（最大まで拡大すると 1 ms が約40画素になります）。
+  測定値は提出時の CSV に記録されています。</p>
+  <p style="color:var(--muted)">作業内容はブラウザ内に自動保存されます。
+  閉じても同じブラウザで開き直せば続きから再開できます。</p>
+  <div class="row"><button onclick="dlgHelp.close()">閉じる</button></div>
+</dialog>
+
+<dialog id="dlgOut">
+  <h3 style="margin-top:0">結果</h3>
+  <p>下のテキストを<b>すべて選択してコピー</b>し、メールに貼り付けて返信してください。
+     （「ファイルとして保存」でも構いません。）</p>
+  <textarea id="out" readonly></textarea>
+  <div class="row">
+    <button id="copy">コピー</button>
+    <button id="dl">ファイルとして保存</button>
+    <button onclick="dlgOut.close()">閉じる</button>
+    <span class="hint" id="outstat"></span>
+  </div>
+</dialog>
+
+<script>
+const AID = "ANNOT02";
+const SYNC_URL = "";
+const SYNC_KEY = "";
+const IMG_PX_PER_MS = 4;
+const CLIP_MS = 700;
+const TOKENS = [{"id": "ANNOT02_001", "img": "img/ANNOT02_001.jpg", "audio": "audio/ANNOT02_001.wav"}, {"id": "ANNOT02_002", "img": "img/ANNOT02_002.jpg", "audio": "audio/ANNOT02_002.wav"}, {"id": "ANNOT02_003", "img": "img/ANNOT02_003.jpg", "audio": "audio/ANNOT02_003.wav"}, {"id": "ANNOT02_004", "img": "img/ANNOT02_004.jpg", "audio": "audio/ANNOT02_004.wav"}, {"id": "ANNOT02_005", "img": "img/ANNOT02_005.jpg", "audio": "audio/ANNOT02_005.wav"}, {"id": "ANNOT02_006", "img": "img/ANNOT02_006.jpg", "audio": "audio/ANNOT02_006.wav"}, {"id": "ANNOT02_007", "img": "img/ANNOT02_007.jpg", "audio": "audio/ANNOT02_007.wav"}, {"id": "ANNOT02_008", "img": "img/ANNOT02_008.jpg", "audio": "audio/ANNOT02_008.wav"}, {"id": "ANNOT02_009", "img": "img/ANNOT02_009.jpg", "audio": "audio/ANNOT02_009.wav"}, {"id": "ANNOT02_010", "img": "img/ANNOT02_010.jpg", "audio": "audio/ANNOT02_010.wav"}, {"id": "ANNOT02_011", "img": "img/ANNOT02_011.jpg", "audio": "audio/ANNOT02_011.wav"}, {"id": "ANNOT02_012", "img": "img/ANNOT02_012.jpg", "audio": "audio/ANNOT02_012.wav"}, {"id": "ANNOT02_013", "img": "img/ANNOT02_013.jpg", "audio": "audio/ANNOT02_013.wav"}, {"id": "ANNOT02_014", "img": "img/ANNOT02_014.jpg", "audio": "audio/ANNOT02_014.wav"}, {"id": "ANNOT02_015", "img": "img/ANNOT02_015.jpg", "audio": "audio/ANNOT02_015.wav"}, {"id": "ANNOT02_016", "img": "img/ANNOT02_016.jpg", "audio": "audio/ANNOT02_016.wav"}, {"id": "ANNOT02_017", "img": "img/ANNOT02_017.jpg", "audio": "audio/ANNOT02_017.wav"}, {"id": "ANNOT02_018", "img": "img/ANNOT02_018.jpg", "audio": "audio/ANNOT02_018.wav"}, {"id": "ANNOT02_019", "img": "img/ANNOT02_019.jpg", "audio": "audio/ANNOT02_019.wav"}, {"id": "ANNOT02_020", "img": "img/ANNOT02_020.jpg", "audio": "audio/ANNOT02_020.wav"}, {"id": "ANNOT02_021", "img": "img/ANNOT02_021.jpg", "audio": "audio/ANNOT02_021.wav"}, {"id": "ANNOT02_022", "img": "img/ANNOT02_022.jpg", "audio": "audio/ANNOT02_022.wav"}, {"id": "ANNOT02_023", "img": "img/ANNOT02_023.jpg", "audio": "audio/ANNOT02_023.wav"}, {"id": "ANNOT02_024", "img": "img/ANNOT02_024.jpg", "audio": "audio/ANNOT02_024.wav"}, {"id": "ANNOT02_025", "img": "img/ANNOT02_025.jpg", "audio": "audio/ANNOT02_025.wav"}, {"id": "ANNOT02_026", "img": "img/ANNOT02_026.jpg", "audio": "audio/ANNOT02_026.wav"}, {"id": "ANNOT02_027", "img": "img/ANNOT02_027.jpg", "audio": "audio/ANNOT02_027.wav"}, {"id": "ANNOT02_028", "img": "img/ANNOT02_028.jpg", "audio": "audio/ANNOT02_028.wav"}, {"id": "ANNOT02_029", "img": "img/ANNOT02_029.jpg", "audio": "audio/ANNOT02_029.wav"}, {"id": "ANNOT02_030", "img": "img/ANNOT02_030.jpg", "audio": "audio/ANNOT02_030.wav"}, {"id": "ANNOT02_031", "img": "img/ANNOT02_031.jpg", "audio": "audio/ANNOT02_031.wav"}, {"id": "ANNOT02_032", "img": "img/ANNOT02_032.jpg", "audio": "audio/ANNOT02_032.wav"}, {"id": "ANNOT02_033", "img": "img/ANNOT02_033.jpg", "audio": "audio/ANNOT02_033.wav"}, {"id": "ANNOT02_034", "img": "img/ANNOT02_034.jpg", "audio": "audio/ANNOT02_034.wav"}, {"id": "ANNOT02_035", "img": "img/ANNOT02_035.jpg", "audio": "audio/ANNOT02_035.wav"}, {"id": "ANNOT02_036", "img": "img/ANNOT02_036.jpg", "audio": "audio/ANNOT02_036.wav"}, {"id": "ANNOT02_037", "img": "img/ANNOT02_037.jpg", "audio": "audio/ANNOT02_037.wav"}, {"id": "ANNOT02_038", "img": "img/ANNOT02_038.jpg", "audio": "audio/ANNOT02_038.wav"}, {"id": "ANNOT02_039", "img": "img/ANNOT02_039.jpg", "audio": "audio/ANNOT02_039.wav"}, {"id": "ANNOT02_040", "img": "img/ANNOT02_040.jpg", "audio": "audio/ANNOT02_040.wav"}, {"id": "ANNOT02_041", "img": "img/ANNOT02_041.jpg", "audio": "audio/ANNOT02_041.wav"}, {"id": "ANNOT02_042", "img": "img/ANNOT02_042.jpg", "audio": "audio/ANNOT02_042.wav"}, {"id": "ANNOT02_043", "img": "img/ANNOT02_043.jpg", "audio": "audio/ANNOT02_043.wav"}, {"id": "ANNOT02_044", "img": "img/ANNOT02_044.jpg", "audio": "audio/ANNOT02_044.wav"}, {"id": "ANNOT02_045", "img": "img/ANNOT02_045.jpg", "audio": "audio/ANNOT02_045.wav"}, {"id": "ANNOT02_046", "img": "img/ANNOT02_046.jpg", "audio": "audio/ANNOT02_046.wav"}, {"id": "ANNOT02_047", "img": "img/ANNOT02_047.jpg", "audio": "audio/ANNOT02_047.wav"}, {"id": "ANNOT02_048", "img": "img/ANNOT02_048.jpg", "audio": "audio/ANNOT02_048.wav"}, {"id": "ANNOT02_049", "img": "img/ANNOT02_049.jpg", "audio": "audio/ANNOT02_049.wav"}, {"id": "ANNOT02_050", "img": "img/ANNOT02_050.jpg", "audio": "audio/ANNOT02_050.wav"}, {"id": "ANNOT02_051", "img": "img/ANNOT02_051.jpg", "audio": "audio/ANNOT02_051.wav"}, {"id": "ANNOT02_052", "img": "img/ANNOT02_052.jpg", "audio": "audio/ANNOT02_052.wav"}, {"id": "ANNOT02_053", "img": "img/ANNOT02_053.jpg", "audio": "audio/ANNOT02_053.wav"}, {"id": "ANNOT02_054", "img": "img/ANNOT02_054.jpg", "audio": "audio/ANNOT02_054.wav"}, {"id": "ANNOT02_055", "img": "img/ANNOT02_055.jpg", "audio": "audio/ANNOT02_055.wav"}, {"id": "ANNOT02_056", "img": "img/ANNOT02_056.jpg", "audio": "audio/ANNOT02_056.wav"}, {"id": "ANNOT02_057", "img": "img/ANNOT02_057.jpg", "audio": "audio/ANNOT02_057.wav"}, {"id": "ANNOT02_058", "img": "img/ANNOT02_058.jpg", "audio": "audio/ANNOT02_058.wav"}, {"id": "ANNOT02_059", "img": "img/ANNOT02_059.jpg", "audio": "audio/ANNOT02_059.wav"}, {"id": "ANNOT02_060", "img": "img/ANNOT02_060.jpg", "audio": "audio/ANNOT02_060.wav"}, {"id": "ANNOT02_061", "img": "img/ANNOT02_061.jpg", "audio": "audio/ANNOT02_061.wav"}, {"id": "ANNOT02_062", "img": "img/ANNOT02_062.jpg", "audio": "audio/ANNOT02_062.wav"}, {"id": "ANNOT02_063", "img": "img/ANNOT02_063.jpg", "audio": "audio/ANNOT02_063.wav"}, {"id": "ANNOT02_064", "img": "img/ANNOT02_064.jpg", "audio": "audio/ANNOT02_064.wav"}, {"id": "ANNOT02_065", "img": "img/ANNOT02_065.jpg", "audio": "audio/ANNOT02_065.wav"}, {"id": "ANNOT02_066", "img": "img/ANNOT02_066.jpg", "audio": "audio/ANNOT02_066.wav"}, {"id": "ANNOT02_067", "img": "img/ANNOT02_067.jpg", "audio": "audio/ANNOT02_067.wav"}, {"id": "ANNOT02_068", "img": "img/ANNOT02_068.jpg", "audio": "audio/ANNOT02_068.wav"}, {"id": "ANNOT02_069", "img": "img/ANNOT02_069.jpg", "audio": "audio/ANNOT02_069.wav"}, {"id": "ANNOT02_070", "img": "img/ANNOT02_070.jpg", "audio": "audio/ANNOT02_070.wav"}, {"id": "ANNOT02_071", "img": "img/ANNOT02_071.jpg", "audio": "audio/ANNOT02_071.wav"}, {"id": "ANNOT02_072", "img": "img/ANNOT02_072.jpg", "audio": "audio/ANNOT02_072.wav"}, {"id": "ANNOT02_073", "img": "img/ANNOT02_073.jpg", "audio": "audio/ANNOT02_073.wav"}, {"id": "ANNOT02_074", "img": "img/ANNOT02_074.jpg", "audio": "audio/ANNOT02_074.wav"}, {"id": "ANNOT02_075", "img": "img/ANNOT02_075.jpg", "audio": "audio/ANNOT02_075.wav"}, {"id": "ANNOT02_076", "img": "img/ANNOT02_076.jpg", "audio": "audio/ANNOT02_076.wav"}, {"id": "ANNOT02_077", "img": "img/ANNOT02_077.jpg", "audio": "audio/ANNOT02_077.wav"}, {"id": "ANNOT02_078", "img": "img/ANNOT02_078.jpg", "audio": "audio/ANNOT02_078.wav"}, {"id": "ANNOT02_079", "img": "img/ANNOT02_079.jpg", "audio": "audio/ANNOT02_079.wav"}, {"id": "ANNOT02_080", "img": "img/ANNOT02_080.jpg", "audio": "audio/ANNOT02_080.wav"}, {"id": "ANNOT02_081", "img": "img/ANNOT02_081.jpg", "audio": "audio/ANNOT02_081.wav"}, {"id": "ANNOT02_082", "img": "img/ANNOT02_082.jpg", "audio": "audio/ANNOT02_082.wav"}, {"id": "ANNOT02_083", "img": "img/ANNOT02_083.jpg", "audio": "audio/ANNOT02_083.wav"}, {"id": "ANNOT02_084", "img": "img/ANNOT02_084.jpg", "audio": "audio/ANNOT02_084.wav"}, {"id": "ANNOT02_085", "img": "img/ANNOT02_085.jpg", "audio": "audio/ANNOT02_085.wav"}, {"id": "ANNOT02_086", "img": "img/ANNOT02_086.jpg", "audio": "audio/ANNOT02_086.wav"}, {"id": "ANNOT02_087", "img": "img/ANNOT02_087.jpg", "audio": "audio/ANNOT02_087.wav"}, {"id": "ANNOT02_088", "img": "img/ANNOT02_088.jpg", "audio": "audio/ANNOT02_088.wav"}, {"id": "ANNOT02_089", "img": "img/ANNOT02_089.jpg", "audio": "audio/ANNOT02_089.wav"}, {"id": "ANNOT02_090", "img": "img/ANNOT02_090.jpg", "audio": "audio/ANNOT02_090.wav"}, {"id": "ANNOT02_091", "img": "img/ANNOT02_091.jpg", "audio": "audio/ANNOT02_091.wav"}, {"id": "ANNOT02_092", "img": "img/ANNOT02_092.jpg", "audio": "audio/ANNOT02_092.wav"}, {"id": "ANNOT02_093", "img": "img/ANNOT02_093.jpg", "audio": "audio/ANNOT02_093.wav"}, {"id": "ANNOT02_094", "img": "img/ANNOT02_094.jpg", "audio": "audio/ANNOT02_094.wav"}, {"id": "ANNOT02_095", "img": "img/ANNOT02_095.jpg", "audio": "audio/ANNOT02_095.wav"}, {"id": "ANNOT02_096", "img": "img/ANNOT02_096.jpg", "audio": "audio/ANNOT02_096.wav"}, {"id": "ANNOT02_097", "img": "img/ANNOT02_097.jpg", "audio": "audio/ANNOT02_097.wav"}, {"id": "ANNOT02_098", "img": "img/ANNOT02_098.jpg", "audio": "audio/ANNOT02_098.wav"}, {"id": "ANNOT02_099", "img": "img/ANNOT02_099.jpg", "audio": "audio/ANNOT02_099.wav"}, {"id": "ANNOT02_100", "img": "img/ANNOT02_100.jpg", "audio": "audio/ANNOT02_100.wav"}, {"id": "ANNOT02_101", "img": "img/ANNOT02_101.jpg", "audio": "audio/ANNOT02_101.wav"}, {"id": "ANNOT02_102", "img": "img/ANNOT02_102.jpg", "audio": "audio/ANNOT02_102.wav"}, {"id": "ANNOT02_103", "img": "img/ANNOT02_103.jpg", "audio": "audio/ANNOT02_103.wav"}, {"id": "ANNOT02_104", "img": "img/ANNOT02_104.jpg", "audio": "audio/ANNOT02_104.wav"}, {"id": "ANNOT02_105", "img": "img/ANNOT02_105.jpg", "audio": "audio/ANNOT02_105.wav"}, {"id": "ANNOT02_106", "img": "img/ANNOT02_106.jpg", "audio": "audio/ANNOT02_106.wav"}, {"id": "ANNOT02_107", "img": "img/ANNOT02_107.jpg", "audio": "audio/ANNOT02_107.wav"}, {"id": "ANNOT02_108", "img": "img/ANNOT02_108.jpg", "audio": "audio/ANNOT02_108.wav"}, {"id": "ANNOT02_109", "img": "img/ANNOT02_109.jpg", "audio": "audio/ANNOT02_109.wav"}, {"id": "ANNOT02_110", "img": "img/ANNOT02_110.jpg", "audio": "audio/ANNOT02_110.wav"}, {"id": "ANNOT02_111", "img": "img/ANNOT02_111.jpg", "audio": "audio/ANNOT02_111.wav"}];
+const KEY = "vot_annot_" + AID;
+
+let idx = 0, active = "burst";
+let view = {start: 0, pxPerMs: 1};
+// localStorage は file:// や data: URL では SecurityError を投げることがある
+// （Safari は file:// で拒否する）。落ちるとスクリプト全体が止まるので必ず保護する。
+let STORE_OK = true;
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(_){ STORE_OK=false; return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(_){ STORE_OK=false; } }
+let state = {};
+try{ state = JSON.parse(lsGet(KEY) || "{}"); }catch(_){ state = {}; }
+const imgs = {};
+
+const ov = document.getElementById("overview"), oc = ov.getContext("2d");
+const dt = document.getElementById("detail"),  dc = dt.getContext("2d");
+
+const au = document.getElementById("au");
+const HAS_AUDIO = TOKENS.length > 0 && !!TOKENS[0].audio;
+let stopAt = null;
+let playPos = null;          // 再生中のみ ms。null なら線を描かない
+let rafId = null;
+function tickPlayhead(){
+  if(au.paused){ playPos = null; rafId = null; draw(); return; }
+  // 停止判定はここで行う。timeupdate は約250ms間隔でしか発火しないため、
+  // 短い選択範囲だと大きく行き過ぎる
+  if(stopAt != null && au.currentTime >= stopAt){
+    clearStop(); au.pause(); stopAt = null; playPos = null; draw(); rafId = null; return;
+  }
+  playPos = au.currentTime * 1000;
+  draw();
+  rafId = requestAnimationFrame(tickPlayhead);
+}
+function startPlayhead(){
+  document.getElementById("playAll").classList.add("playing");
+  if(rafId == null) rafId = requestAnimationFrame(tickPlayhead);
+}
+let stopTimer = null;
+function clearStop(){ if(stopTimer){ clearTimeout(stopTimer); stopTimer = null; } }
+function seekAndPlay(fromSec, toSec){
+  clearStop();
+  const go2 = ()=>{
+    try{ au.currentTime = fromSec; }catch(_){}
+    stopAt = toSec;
+    au.play().then(()=>{
+      // rAF の 16ms 刻みでは短い選択に粗いので、実時間のタイマーでも止める
+      if(toSec != null){
+        const ms = Math.max(0, (toSec - au.currentTime) * 1000);
+        clearStop();
+        stopTimer = setTimeout(()=>{ au.pause(); stopAt = null; stopTimer = null;
+                                     playPos = null; draw(); }, ms);
+      }
+    }).catch(()=>{});
+    startPlayhead();
+  };
+  // readyState < 1 だと currentTime を設定できず、先頭から鳴ってしまう
+  if(au.readyState >= 1) go2();
+  else au.addEventListener("loadedmetadata", go2, {once:true});
+}
+function playAll(){
+  if(!HAS_AUDIO) return;
+  const r = rec(); r.plays = (r.plays||0) + 1; save();
+  seekAndPlay(0, null);
+}
+// ドラッグで選んだ範囲。{a,b} は ms（a<b）。null なら未選択
+let sel = null;
+function setSel(v){
+  sel = v;
+  const b = document.getElementById("play");
+  if(b) b.disabled = !(sel && HAS_AUDIO);
+}
+function playSel(){
+  if(!HAS_AUDIO) return;
+  const r0 = rec(); r0.plays = (r0.plays||0) + 1; save();
+  const a0 = (sel ? Math.max(0, sel.a) : 0)/1000;
+  const a1 = (sel ? Math.min(CLIP_MS, sel.b) : CLIP_MS)/1000;
+  seekAndPlay(a0, a1);
+}
+if(HAS_AUDIO){
+  document.getElementById("play").hidden = false;
+  document.getElementById("playAll").hidden = false;
+  au.addEventListener("pause", ()=>{
+    document.getElementById("playAll").classList.remove("playing"); });
+  au.addEventListener("ended", ()=>{
+    document.getElementById("playAll").classList.remove("playing");
+    playPos = null; draw(); });
+  au.addEventListener("timeupdate", ()=>{ if(stopAt!=null && au.currentTime >= stopAt){ au.pause(); stopAt=null; } });
+}
+function cur(){ return TOKENS[idx]; }
+function rec(){ return state[cur().id] || (state[cur().id] = {}); }
+function save(){ lsSet(KEY, JSON.stringify(state)); if(!STORE_OK){ warnNoSave(); autoDump(); } }
+/** 1トークン分の変更を確定して、サーバにも送る */
+function commit(id){
+  const r = state[id]; if(r) r.ts = Date.now();
+  save();
+  enqueue(id);
+}
+
+function loadImg(i){
+  if(i < 0 || i >= TOKENS.length) return;
+  const t = TOKENS[i];
+  if(imgs[t.id]) return imgs[t.id];
+  const im = new Image();
+  im.src = t.img;
+  im.onload = () => { if(i === idx) draw(); };
+  imgs[t.id] = im;
+  return im;
+}
+
+function fitCanvas(c){
+  const r = c.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  if(c.width !== Math.round(r.width*d) || c.height !== Math.round(r.height*d)){
+    c.width = Math.round(r.width*d); c.height = Math.round(r.height*d);
+  }
+  return {w: r.width, h: r.height, d};
+}
+
+function drawMark(ctx, x, h, color, label, d){
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 2*d; ctx.beginPath();
+  ctx.moveTo(x*d, 0); ctx.lineTo(x*d, h*d); ctx.stroke();
+  ctx.fillStyle = color; ctx.font = (12*d)+"px sans-serif";
+  ctx.fillText(label, x*d + 4*d, 14*d);
+  ctx.restore();
+}
+
+// 再生位置。ランドマークと混同されないよう、色も形も別にする（細い灰色の実線）
+function drawPlayhead(ctx, x, h, d){
+  ctx.save();
+  ctx.strokeStyle = "rgba(90,90,90,.85)"; ctx.lineWidth = 1*d;
+  ctx.beginPath(); ctx.moveTo(x*d, 0); ctx.lineTo(x*d, h*d); ctx.stroke();
+  ctx.restore();
+}
+function draw(){
+  const im = imgs[cur().id];
+  const r = rec();
+
+  // ---- 全体 ----
+  const o = fitCanvas(ov);
+  oc.clearRect(0,0,ov.width,ov.height);
+  if(im && im.complete && im.naturalWidth){
+    oc.drawImage(im, 0,0,im.naturalWidth,im.naturalHeight, 0,0,ov.width,ov.height);
+  }
+  const oscale = o.w / CLIP_MS;
+  if(r.burst != null) drawMark(oc, r.burst*oscale, o.h, getCSS("--burst"), "", o.d);
+  if(r.voi   != null) drawMark(oc, r.voi*oscale,   o.h, getCSS("--voi"),   "", o.d);
+  // 現在の拡大範囲
+  oc.save();
+  oc.strokeStyle = getCSS("--muted"); oc.lineWidth = 1*o.d;
+  const vw = (o.w / view.pxPerMs) * oscale;
+  oc.strokeRect(view.start*oscale*o.d, 1, vw*o.d, (o.h-2)*o.d);
+  oc.restore();
+  if(playPos != null) drawPlayhead(oc, playPos*oscale, o.h, o.d);
+
+  // ---- 拡大 ----
+  const dd = fitCanvas(dt);
+  dc.clearRect(0,0,dt.width,dt.height);
+  const visMs = dd.w / view.pxPerMs;
+  view.start = Math.max(0, Math.min(view.start, CLIP_MS - visMs));
+  if(im && im.complete && im.naturalWidth){
+    const sx = view.start * IMG_PX_PER_MS, sw = visMs * IMG_PX_PER_MS;
+    dc.drawImage(im, sx, 0, sw, im.naturalHeight, 0, 0, dt.width, dt.height);
+  }
+  if(r.burst != null) drawMark(dc,(r.burst-view.start)*view.pxPerMs, dd.h, getCSS("--burst"), "burst", dd.d);
+  if(r.voi   != null) drawMark(dc,(r.voi-view.start)*view.pxPerMs,   dd.h, getCSS("--voi"),   "voicing", dd.d);
+  if(sel){
+    const x0 = (Math.min(sel.a,sel.b) - view.start) * view.pxPerMs;
+    const x1 = (Math.max(sel.a,sel.b) - view.start) * view.pxPerMs;
+    dc.save();
+    dc.fillStyle = "rgba(70,130,180,.20)";
+    dc.fillRect(x0*dd.d, 0, (x1-x0)*dd.d, dd.h*dd.d);
+    dc.strokeStyle = "rgba(70,130,180,.75)"; dc.lineWidth = 1*dd.d;
+    dc.beginPath(); dc.moveTo(x0*dd.d,0); dc.lineTo(x0*dd.d, dd.h*dd.d);
+    dc.moveTo(x1*dd.d,0); dc.lineTo(x1*dd.d, dd.h*dd.d); dc.stroke();
+    dc.restore();
+  }
+  if(playPos != null){
+    const px = (playPos - view.start) * view.pxPerMs;
+    if(px >= 0 && px <= dd.w) drawPlayhead(dc, px, dd.h, dd.d);
+  }
+
+  // ---- 表示更新 ----
+  const nDone = doneCount(), nAll = TOKENS.length, complete = nDone === nAll;
+  document.getElementById("prog").textContent =
+    (idx+1) + " / " + nAll + "　（記入済み " + nDone + "）";
+  // 出力はフッタ右端の1か所だけ。作業途中でも押せるようにしておく
+  // （自動保存が効かない環境では、閉じる前に出力してもらう必要がある）。
+  // 全件終わったときだけ目立たせる
+  const fin = document.getElementById("finish2");
+  fin.classList.toggle("ready", complete);
+  fin.classList.toggle("mini", !complete);
+  fin.textContent = complete ? "✓ 結果を出力する" : "結果を出力";
+  const sv = document.getElementById("saved");
+  if(complete && STORE_OK){
+    sv.textContent = "全 " + nAll + " 件が終わりました。→";
+    sv.className = "hint allDone";
+  } else if(STORE_OK){
+    sv.textContent = "自動保存されています";
+    sv.className = "hint";
+  }
+  // **数値（ms）は表示しない。** 表示すると
+  //   (i) 韓国語の標準的な VOT 値からの規範的な補正を誘発する
+  //       — 本研究が見たいのはまさに標準から外れたトークンである
+  //   (ii) VOT 値は喉頭クラスを強く予測するため、伏せたはずのクラスが漏れる
+  // 精度は線の見た目の位置で担保される（40 px/ms なら 1ms = 40画素）。
+  document.getElementById("vb").textContent = r.burst!=null ? "設定済み" : "未設定";
+  document.getElementById("vv").textContent = r.voi  !=null ? "設定済み" : "未設定";
+  const ready = !!r.unc || (r.burst != null && r.voi != null);
+  const dh = document.getElementById("doneHint");
+  dh.textContent = ready ? "✓ このトークンは完了です。「次へ」または Enter で進みます。" : "";
+  dh.className = ready ? "hint done" : "hint";
+  document.getElementById("uncBtn").classList.toggle("on", !!r.unc);
+  document.getElementById("uncReason").value = r.reason || "";
+  document.querySelectorAll("[data-nudge]").forEach(b=>{
+    b.style.opacity = (b.dataset.nudge===active) ? 1 : .55;
+  });
+  const visMsNow = dd.w / view.pxPerMs;
+  document.getElementById("zoomInfo").textContent =
+    "表示幅 " + visMsNow.toFixed(0) + " ms（" + view.pxPerMs.toFixed(1) + " px/ms）";
+  document.getElementById("zoomIn").disabled  = view.pxPerMs >= 40;
+  document.getElementById("zoomOut").disabled = view.pxPerMs <= 0.41;
+  document.getElementById("chipB").classList.toggle("act", active==="burst");
+  document.getElementById("chipV").classList.toggle("act", active==="voi");
+}
+let warned = false;
+function warnNoSave(){
+  if(warned) return;
+  warned = true;
+  const el = document.getElementById("saved");
+  el.textContent = "⚠ このブラウザでは自動保存が使えません（Chrome でファイルを直接開いた場合）。"
+                 + "10件ごとに復旧用ファイルが自動保存されます。中断後は「途中から再開」でそれを"
+                 + "読み込んでください。Firefox で開くと自動保存が有効になります";
+  el.style.color = "var(--burst)";
+  el.style.fontWeight = "700";
+}
+function zoomBy(f){
+  const w = dt.getBoundingClientRect().width;
+  const r = rec();
+  // 選択中のランドマークがあればそこを、無ければ表示中央を固定して拡大する
+  const anchor = (r[active] != null) ? r[active] : view.start + (w/view.pxPerMs)/2;
+  const frac = (anchor - view.start) / (w/view.pxPerMs);
+  view.pxPerMs = Math.max(0.4, Math.min(40, view.pxPerMs * f));
+  view.start = anchor - frac * (w/view.pxPerMs);
+  draw();
+}
+function zoomFit(){
+  view.pxPerMs = dt.getBoundingClientRect().width / CLIP_MS;
+  view.start = 0; draw();
+}
+function zoomToMark(){
+  const r = rec();
+  const c = (r[active] != null) ? r[active] : (r.burst != null ? r.burst : 300);
+  view.pxPerMs = Math.max(view.pxPerMs, 6);
+  view.start = c - (dt.getBoundingClientRect().width/view.pxPerMs)/2;
+  draw();
+}
+function getCSS(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function doneCount(){
+  return TOKENS.filter(t=>{const s=state[t.id]; return s && (s.unc || (s.burst!=null&&s.voi!=null));}).length;
+}
+
+function setMs(which, ms){
+  const r = rec();
+  r[which] = Math.max(0, Math.min(CLIP_MS, Math.round(ms*10)/10));
+  r.unc = false; r.reason = "";
+  commit(cur().id); draw();
+}
+
+let tEnter = Date.now();
+function go(n){
+  // 直前トークンの所要時間を積算（QC 用）
+  if(TOKENS[idx]){ const r0 = state[TOKENS[idx].id] || (state[TOKENS[idx].id]={});
+    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; commit(TOKENS[idx].id); }
+  tEnter = Date.now();
+  idx = Math.max(0, Math.min(TOKENS.length-1, n));
+  const r = rec();
+  // クリップは0.7秒しかないので、初期表示は**全体**にする。
+  // 必要に応じて拡大する。パン操作は基本的に不要。
+  // **初期値としてランドマークは置かない。** 事前配置はアンカリングを生み、
+  // §5.2 の採否判定（セグメント持続時間 ≒ VOT か）を構成上無効にする。
+  const w0 = dt.getBoundingClientRect().width;
+  view.pxPerMs = w0 / CLIP_MS;
+  view.start = 0;
+  active = "burst";
+  if(HAS_AUDIO){ clearStop(); au.pause(); stopAt = null; playPos = null; au.src = TOKENS[idx].audio; }
+  setSel(null);
+  loadImg(idx); loadImg(idx+1); loadImg(idx+2);
+  draw();
+}
+
+// ---- 入力 ----
+function msAt(clientX){
+  const r = dt.getBoundingClientRect();
+  return view.start + (clientX - r.left)/view.pxPerMs;
+}
+// 既存の線の近く（画面上 8px 以内）をつかんだら、その線を選んで動かす
+function hitMarker(clientX){
+  const r = rec(), ms = msAt(clientX), tol = 8/view.pxPerMs;
+  let best = null, bd = Infinity;
+  for(const k of ["burst","voi"]){
+    if(r[k] == null) continue;
+    const d = Math.abs(r[k] - ms);
+    if(d < tol && d < bd){ bd = d; best = k; }
+  }
+  return best;
+}
+dt.addEventListener("pointerdown", e=>{
+  dt.setPointerCapture(e.pointerId);
+  const hit = hitMarker(e.clientX);
+  dt._drag = hit;
+  if(hit){ active = hit; draw(); }
+  dt._x = e.clientX; dt._moved = false; dt._s = view.start;
+  dt._downMs = msAt(e.clientX); dt._pan = e.shiftKey;
+});
+dt.addEventListener("pointermove", e=>{
+  if(e.buttons && dt._drag){ setMs(dt._drag, msAt(e.clientX)); return; }
+  if(!e.buttons){ dt.style.cursor = hitMarker(e.clientX) ? "col-resize" : "crosshair"; return; }
+  if(dt._x == null) return;
+  const dx = e.clientX - dt._x;
+  if(Math.abs(dx) <= 4) return;
+  dt._moved = true;
+  if(dt._pan){ view.start = dt._s - dx/view.pxPerMs; draw(); return; }
+  // 素のドラッグは範囲選択。クリップは 0.7 秒しかなく、既定表示が全体なので
+  // 表示移動より「聞きたいところを選ぶ」ほうが要る（必要なら Shift+ドラッグ）
+  const a = dt._downMs, b = msAt(e.clientX);
+  setSel({a: Math.min(a,b), b: Math.max(a,b)});
+  draw();
+});
+dt.addEventListener("pointerup", e=>{
+  if(dt._drag){ dt._drag = null; dt._x = null; return; }
+  if(dt._moved && !dt._pan && sel && sel.b - sel.a >= 5){ playSel(); dt._x = null; return; }
+  if(!dt._moved){
+    setSel(null);          // 点を置いたら選択は消す（帯が残ると線が見づらい）
+    const wasEmpty = rec()[active] == null;
+    setMs(active, msAt(e.clientX));
+    // 最初に burst を置いたときだけ voicing に自動で進む。
+    // 以後は自動で切り替えない（切り替わると赤線をクリックで動かせなくなるため）
+    if(active === "burst" && wasEmpty && rec().voi == null) active = "voi";
+    draw();
+  }
+  dt._x = null;
+});
+dt.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const r = dt.getBoundingClientRect();
+  const at = view.start + (e.clientX - r.left)/view.pxPerMs;
+  const f = e.deltaY < 0 ? 1.25 : 0.8;
+  view.pxPerMs = Math.max(0.4, Math.min(40, view.pxPerMs*f));
+  view.start = at - (e.clientX - r.left)/view.pxPerMs;
+  draw();
+}, {passive:false});
+
+ov.addEventListener("click", e=>{
+  const r = ov.getBoundingClientRect();
+  const ms = (e.clientX - r.left)/r.width*CLIP_MS;
+  view.start = ms - (dt.getBoundingClientRect().width/view.pxPerMs)/2;
+  draw();
+});
+
+document.querySelectorAll("[data-nudge]").forEach(b=>b.onclick=()=>{
+  const w = b.dataset.nudge, r = rec();
+  if(r[w]==null) return;
+  setMs(w, r[w] + (+b.dataset.d));
+});
+document.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{
+  const r = rec(); delete r[b.dataset.clear]; commit(cur().id); draw();
+});
+document.getElementById("uncBtn").onclick = ()=>{
+  const r = rec(); r.unc = !r.unc;
+  if(r.unc){ delete r.burst; delete r.voi; }
+  commit(cur().id); draw();
+};
+document.getElementById("uncReason").onchange = e=>{
+  const r = rec(); r.reason = e.target.value; if(r.reason) r.unc = true;
+  commit(cur().id); draw();
+};
+document.querySelectorAll(".chip.sel").forEach(c=>c.onclick=()=>{
+  active = c.dataset.sel; draw();
+});
+document.getElementById("prev").onclick = ()=>go(idx-1);
+document.getElementById("next").onclick = ()=>go(idx+1);
+document.getElementById("zoomIn").onclick   = ()=>zoomBy(1.5);
+document.getElementById("zoomOut").onclick  = ()=>zoomBy(1/1.5);
+document.getElementById("zoomFit").onclick  = zoomFit;
+document.getElementById("zoomMark").onclick = zoomToMark;
+document.getElementById("play").onclick = ()=>playSel();
+document.getElementById("playAll").onclick = ()=>playAll();
+document.getElementById("help").onclick = ()=>dlgHelp.showModal();
+
+addEventListener("keydown", e=>{
+  const tag = e.target.tagName;
+  if(tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA"
+     || document.querySelector("dialog[open]")) return;
+  const r = rec();
+  if(e.key === "b" || e.key === "B"){ active="burst"; draw(); }
+  else if(e.key === "v" || e.key === "V"){ active="voi"; draw(); }
+  else if(e.key === "u" || e.key === "U"){ document.getElementById("uncBtn").click(); }
+  else if(e.key === "Enter"){ go(idx+1); }
+  else if(e.key === "ArrowLeft" || e.key === "ArrowRight"){
+    e.preventDefault();
+    if(r[active]==null) return;
+    setMs(active, r[active] + (e.key==="ArrowRight"?1:-1)*(e.shiftKey?5:1));
+  } else if(e.key === "+" || e.key === "="){ zoomBy(1.5); }
+  else if(e.key === "-"){ zoomBy(1/1.5); }
+});
+addEventListener("resize", draw);
+if(window.ResizeObserver) new ResizeObserver(()=>draw()).observe(dt);
+
+// ---- 出力 ----
+function csv(){
+  const L = ["annotator,presentation_no,token_id,burst_ms,voicing_onset_ms,vot_ms,uncodable,reason,seconds_spent,plays"];
+  for(let i=0;i<TOKENS.length;i++){
+    const t = TOKENS[i], s = state[t.id] || {};
+    const b = s.burst!=null ? s.burst.toFixed(1) : "";
+    const v = s.voi  !=null ? s.voi.toFixed(1)   : "";
+    const vot = (s.burst!=null && s.voi!=null) ? (s.voi-s.burst).toFixed(1) : "";
+    L.push([AID, String(i+1).padStart(3,"0"), t.id, b, v, vot,
+            s.unc?1:0, s.reason||"", (s.secs||0).toFixed(1), s.plays||0].join(","));
+  }
+  return L.join("\n");
+}
+function openOut(){
+  // 最後の1件の所要時間をここで確定させる。go() は遷移時にしか積まないため、
+  // このひと手間が無いと最終トークンの計測が抜ける。
+  if(TOKENS[idx]){ const r0 = state[TOKENS[idx].id] || (state[TOKENS[idx].id]={});
+    r0.secs = (r0.secs||0) + (Date.now()-tEnter)/1000; tEnter = Date.now(); save(); }
+  document.getElementById("out").value = csv();
+  const nd = doneCount(), na = TOKENS.length;
+  const st = document.getElementById("outstat");
+  st.textContent = nd === na ? "✓ 全 " + na + " 件が記入済みです"
+                             : "⚠ 未記入が " + (na-nd) + " 件あります（" + nd + " / " + na + "）";
+  st.className = nd === na ? "hint allDone" : "hint";
+  dlgOut.showModal();
+}
+document.getElementById("finish2").onclick = openOut;
+document.getElementById("copy").onclick = async ()=>{
+  const ta = document.getElementById("out");
+  ta.select();
+  try{ await navigator.clipboard.writeText(ta.value); }catch(_){ document.execCommand("copy"); }
+  document.getElementById("outstat").textContent = "コピーしました";
+};
+document.getElementById("dl").onclick = ()=>{
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv()], {type:"text/csv"}));
+  a.download = "results_" + AID + ".csv"; a.click();
+};
+
+// ---- 途中から再開 ----
+// file:// では Chrome が localStorage を拒む（各ファイルが別オリジン扱い）ため、
+// 自動保存に頼れない。書き出した CSV をそのまま読み戻せるようにする。
+// 提出用ファイルと保存ファイルを兼ねるので、余計な形式を増やさない。
+function restoreFromCsv(text){
+  const lines = text.split(/\r?\n/).filter(x=>x.trim());
+  if(!lines.length) return {n:0, err:"空のファイルです"};
+  const head = lines[0].split(",").map(x=>x.trim());
+  const col = n => head.indexOf(n);
+  const ci = {id:col("token_id"), b:col("burst_ms"), v:col("voicing_onset_ms"),
+              u:col("uncodable"), r:col("reason"), s:col("seconds_spent"), p:col("plays")};
+  if(ci.id < 0) return {n:0, err:"token_id の列が見つかりません"};
+  const known = new Set(TOKENS.map(t=>t.id));
+  let n = 0, foreign = 0;
+  for(let i=1;i<lines.length;i++){
+    const f = lines[i].split(",");
+    const id = (f[ci.id]||"").trim();
+    if(!id) continue;
+    if(!known.has(id)){ foreign++; continue; }
+    const num = j => (j>=0 && f[j] !== undefined && f[j].trim() !== "") ? parseFloat(f[j]) : null;
+    const b = num(ci.b), v = num(ci.v), u = num(ci.u);
+    const rec2 = {};
+    if(b != null) rec2.burst = b;
+    if(v != null) rec2.voi = v;
+    if(u === 1){ rec2.unc = true; rec2.reason = (ci.r>=0 ? (f[ci.r]||"").trim() : ""); }
+    const sec = num(ci.s), pl = num(ci.p);
+    if(sec != null) rec2.secs = sec;
+    if(pl != null) rec2.plays = pl;
+    if(!Object.keys(rec2).length) continue;
+    state[id] = rec2;
+    // 所要時間だけの行（未記入）は「読み込んだ件数」に数えない
+    if(rec2.unc || (rec2.burst != null && rec2.voi != null)) n++;
+  }
+  save();
+  return {n, foreign};
+}
+document.getElementById("resume").onclick = ()=>document.getElementById("resumeFile").click();
+document.getElementById("resumeFile").onchange = (e)=>{
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    const res = restoreFromCsv(String(rd.result));
+    if(res.err){ alert("読み込めませんでした: " + res.err); return; }
+    if(res.foreign){
+      alert("別のパケットの結果のようです（" + res.foreign + " 件が一致しません）。\n"
+            + "読み込めたのは " + res.n + " 件です。");
+    }
+    // 最初の未記入トークンへ飛ぶ
+    let k = TOKENS.findIndex(t=>{ const st = state[t.id];
+      return !(st && (st.unc || (st.burst!=null && st.voi!=null))); });
+    if(k < 0) k = TOKENS.length - 1;
+    go(k);
+    alert(res.n + " 件を読み込みました。" + (k>=0 ? (k+1) + " 件目から再開します。" : ""));
+  };
+  rd.readAsText(f);
+  e.target.value = "";
+};
+
+// ---- 開き直したときに続きから始める ----
+// 保存が効く環境（Firefox の file://、または http で配信した場合）では、
+// 保存済みの state がそのまま読み込まれるので、最初の未記入トークンへ飛ぶだけでよい。
+function firstUnfilled(){
+  const k = TOKENS.findIndex(t=>{ const st = state[t.id];
+    return !(st && (st.unc || (st.burst != null && st.voi != null))); });
+  return k < 0 ? TOKENS.length - 1 : k;
+}
+
+// ---- 保存が効かない環境での退避 ----
+// Chrome の file:// は各ファイルを別オリジン扱いにするため localStorage を拒む。
+// その場合は一定件数ごとに復旧用ファイルを自動で書き出す。
+// 開き直したあと「途中から再開」でそれを読めば続きに戻れる。
+let lastDump = 0;
+function autoDump(){
+  if(STORE_OK) return;
+  const n = doneCount();
+  if(n === 0 || n === lastDump || n % 5 !== 0) return;
+  lastDump = n;
+  try{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv()], {type:"text/csv"}));
+    a.download = "progress_" + AID + ".csv"; a.click();
+  }catch(_){}
+}
+
+// file:// で開かれている＝保存領域が無い可能性が高い。開始時に大きく知らせる
+if(location.protocol === "file:"){
+  const fw = document.getElementById("filewarn");
+  if(fw) fw.hidden = false;
+}
+
+// ---- 1件ごとにサーバへ保存する ----
+// ブラウザの保存領域に依存しないので、`file://` でも、別のパソコンでも、
+// 途中で電源が落ちても、続きから再開できる（decisions (167)）。
+// 通信が切れているあいだは手元に溜めて、回復したら順に送る。
+const SYNC_ON = !!SYNC_URL && SYNC_URL.indexOf("http") === 0;
+let queue = [];
+try{ queue = JSON.parse(lsGet(KEY + "_q") || "[]"); }catch(_){ queue = []; }
+let sending = false;
+
+function syncBadge(){
+  const el = document.getElementById("sync");
+  if(!SYNC_ON){ el.hidden = true; return; }
+  el.hidden = false;
+  if(sending)          { el.textContent = "送信中…";                 el.className = "hint"; }
+  else if(queue.length){ el.textContent = "未送信 " + queue.length + " 件"; el.className = "hint warn"; }
+  else                 { el.textContent = "✓ サーバに保存済み";      el.className = "hint allDone"; }
+}
+
+function payload(id){
+  const s2 = state[id] || {};
+  return {key: SYNC_KEY, annotator: AID, token_id: id,
+          burst_ms: s2.burst != null ? +s2.burst.toFixed(1) : null,
+          voicing_onset_ms: s2.voi != null ? +s2.voi.toFixed(1) : null,
+          vot_ms: (s2.burst != null && s2.voi != null) ? +(s2.voi - s2.burst).toFixed(1) : null,
+          uncodable: !!s2.unc, reason: s2.reason || "",
+          seconds_spent: +(s2.secs || 0).toFixed(1), plays: s2.plays || 0,
+          client_ts: s2.ts || 0};
+}
+
+function enqueue(id){
+  if(!SYNC_ON) return;
+  queue = queue.filter(x => x.token_id !== id);   // 同じトークンは最新だけ送る
+  queue.push(payload(id));
+  lsSet(KEY + "_q", JSON.stringify(queue));
+  syncBadge();
+  flush();
+}
+
+function flush(){
+  if(!SYNC_ON || sending || !queue.length) return;
+  sending = true; syncBadge();
+  const item = queue[0];
+  // Content-Type を text/plain にしてプリフライトを起こさない
+  // （Apps Script は OPTIONS に応答できない）
+  fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
+                   body: JSON.stringify(item)})
+    .then(r => r.json()).catch(()=>null)
+    .then(res => {
+      sending = false;
+      if(res && res.ok){
+        queue = queue.filter(x => x !== item);
+        lsSet(KEY + "_q", JSON.stringify(queue));
+        syncBadge();
+        if(queue.length) flush();
+      }else{
+        syncBadge();
+        setTimeout(flush, 5000);        // 通信断・エラーは待って再送
+      }
+    });
+}
+addEventListener("online", flush);
+
+/** 起動時にサーバから自分の記録を取り戻す。手元と重なる場合は新しいほうを採る。 */
+function pullThenStart(){
+  if(!SYNC_ON){ go(firstUnfilled()); return; }
+  syncBadge();
+  const u = SYNC_URL + (SYNC_URL.indexOf("?") < 0 ? "?" : "&")
+          + "annotator=" + encodeURIComponent(AID) + "&key=" + encodeURIComponent(SYNC_KEY);
+  fetch(u).then(r => r.json()).catch(()=>null).then(res => {
+    let n = 0;
+    if(res && res.ok && res.rows){
+      const known = new Set(TOKENS.map(t=>t.id));
+      res.rows.forEach(r2 => {
+        if(!known.has(r2.token_id)) return;
+        const cur = state[r2.token_id];
+        if(cur && (cur.ts || 0) >= (r2.client_ts || 0)) return;  // 手元のほうが新しい
+        const rec2 = {ts: r2.client_ts || 0};
+        if(r2.burst_ms != null) rec2.burst = r2.burst_ms;
+        if(r2.voicing_onset_ms != null) rec2.voi = r2.voicing_onset_ms;
+        if(r2.uncodable){ rec2.unc = true; rec2.reason = r2.reason || ""; }
+        rec2.secs = r2.seconds_spent || 0; rec2.plays = r2.plays || 0;
+        state[r2.token_id] = rec2;
+        if(rec2.unc || (rec2.burst != null && rec2.voi != null)) n++;
+      });
+      save();
+    }
+    syncBadge();
+    go(firstUnfilled());
+    if(n) setTimeout(()=>alert("サーバから " + n + " 件を復元しました。続きから始めます。"), 100);
+  });
+}
+
+lsSet(KEY + "_probe", "1");
+if(!STORE_OK) warnNoSave();
+pullThenStart();
+</script>
+</body>
+</html>
