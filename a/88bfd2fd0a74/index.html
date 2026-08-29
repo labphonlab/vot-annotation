@@ -79,6 +79,8 @@
   .row.alt{margin-top:4px;padding-top:7px;border-top:1px dashed var(--line)}
   /* 7割以上のクリップに別の閉鎖音のバーストが入る。手順書を最初に一度読むだけでは
      忘れるので、毎トークン目に入る位置に出しておく */
+  .pv{display:inline-flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
+  .pv input{width:15px;height:15px}
   .ordererr{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
             padding:6px 11px;font-size:13px;color:#b91c1c}
   .finbar{background:#eef7f0;border:1px solid #bcdcc6;border-radius:6px;
@@ -296,9 +298,17 @@
     <button class="mini" data-nudge="voi" data-d="5">+5 ms</button>
     <button class="mini" data-clear="voi">消去</button>
   </div>
+  <div class="row" id="pvRow">
+    <label class="pv"><input type="checkbox" id="pvChk">
+      <b>解放より前から声帯振動がある</b>（前有声化）</label>
+    <span class="hint">その場合も <b>voicing onset は解放より後</b>の
+      周期性開始に置いてください</span></div>
+
   <div class="row" id="orderErr" hidden>
     <span class="ordererr">⚠ <b>有声開始がバーストより前にあります。</b>
-      有声開始は、解放（バースト）より後に置いてください。</span></div>
+      有声開始は、解放（バースト）より後に置いてください。<br>
+      解放より前から声帯振動がある場合は、<b>上のチェックを入れたうえで</b>、
+      有声開始は<b>解放後</b>の周期性開始に置いてください。</span></div>
 
   <div class="row alt">
     <span class="hint" style="margin-right:2px">または</span>
@@ -624,6 +634,7 @@ function draw(){
   // 飛ばした分を探せるようにする。80件のうち数件抜けると、
   // 手作業で探すのは現実的でない
   document.getElementById("orderErr").hidden = !orderBad(r);
+  document.getElementById("pvChk").checked = !!r.pv;
   const gapsBtn = document.getElementById("gaps");
   const gaps = unfilledList();
   gapsBtn.hidden = gaps.length === 0;
@@ -827,6 +838,11 @@ document.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{
   if(isFinished()) return;
   const r = rec(); delete r[b.dataset.clear]; commit(cur().id); draw();
 });
+document.getElementById("pvChk").onchange = e=>{
+  if(isFinished()) return;
+  const r = rec(); r.pv = e.target.checked || undefined;
+  commit(cur().id); draw();
+};
 document.getElementById("uncBtn").onclick = ()=>{
   if(isFinished()) return;
   const r = rec(); r.unc = !r.unc;
@@ -872,14 +888,14 @@ if(window.ResizeObserver) new ResizeObserver(()=>draw()).observe(dt);
 
 // ---- 出力 ----
 function csv(){
-  const L = ["annotator,presentation_no,token_id,burst_ms,voicing_onset_ms,vot_ms,uncodable,reason,seconds_spent,plays"];
+  const L = ["annotator,presentation_no,token_id,burst_ms,voicing_onset_ms,vot_ms,uncodable,reason,prevoiced,seconds_spent,plays"];
   for(let i=0;i<TOKENS.length;i++){
     const t = TOKENS[i], s = state[t.id] || {};
     const b = s.burst!=null ? s.burst.toFixed(1) : "";
     const v = s.voi  !=null ? s.voi.toFixed(1)   : "";
     const vot = (s.burst!=null && s.voi!=null) ? (s.voi-s.burst).toFixed(1) : "";
     L.push([AID, String(i+1).padStart(3,"0"), t.id, b, v, vot,
-            s.unc?1:0, s.reason||"", (s.secs||0).toFixed(1), s.plays||0].join(","));
+            s.unc?1:0, s.reason||"", s.pv?1:0, (s.secs||0).toFixed(1), s.plays||0].join(","));
   }
   return L.join("\n");
 }
@@ -1090,7 +1106,7 @@ function payload(id){
           burst_ms: s2.burst != null ? +s2.burst.toFixed(1) : null,
           voicing_onset_ms: s2.voi != null ? +s2.voi.toFixed(1) : null,
           vot_ms: (s2.burst != null && s2.voi != null) ? +(s2.voi - s2.burst).toFixed(1) : null,
-          uncodable: !!s2.unc, reason: s2.reason || "",
+          uncodable: !!s2.unc, reason: s2.reason || "", prevoiced: !!s2.pv,
           seconds_spent: +(s2.secs || 0).toFixed(1), plays: s2.plays || 0,
           client_ts: s2.ts || 0};
 }
@@ -1099,7 +1115,7 @@ function payload(id){
 // 同じ行で埋まる（10件のテストで100行超。本番なら数千行になる）
 const lastSent = {};
 function sig(pl){
-  return [pl.burst_ms, pl.voicing_onset_ms, pl.uncodable, pl.reason].join("|");
+  return [pl.burst_ms, pl.voicing_onset_ms, pl.uncodable, pl.reason, pl.prevoiced].join("|");
 }
 function enqueue(id){
   if(!SYNC_ON) return;
@@ -1206,6 +1222,7 @@ function pullThenStart(){
         if(r2.burst_ms != null) rec2.burst = r2.burst_ms;
         if(r2.voicing_onset_ms != null) rec2.voi = r2.voicing_onset_ms;
         if(r2.uncodable){ rec2.unc = true; rec2.reason = r2.reason || ""; }
+        if(r2.prevoiced) rec2.pv = true;
         rec2.secs = r2.seconds_spent || 0; rec2.plays = r2.plays || 0;
         state[r2.token_id] = rec2;
         if(rec2.unc || (rec2.burst != null && rec2.voi != null)) n++;
