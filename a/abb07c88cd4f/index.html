@@ -114,6 +114,7 @@
   <h1>VOTの手計測</h1>
   <span class="prog" id="prog">– / –</span>
   <span class="sp"></span>
+  <button class="mini" id="gaps" hidden></button>
   <button class="mini" id="resume" hidden>ファイルから再開</button>
   <input type="file" id="resumeFile" accept=".csv,text/csv" hidden>
   <button class="mini" id="help">操作説明</button>
@@ -485,6 +486,16 @@ function draw(){
   fin.classList.toggle("mini", !(complete && !SYNC_ON));
   fin.textContent = SYNC_ON ? "手元に控えを保存"
                             : (complete ? "✓ 結果を出力する" : "結果を出力");
+  // 飛ばした分を探せるようにする。80件のうち数件抜けると、
+  // 手作業で探すのは現実的でない
+  const gapsBtn = document.getElementById("gaps");
+  const gaps = unfilledList();
+  gapsBtn.hidden = gaps.length === 0;
+  if(gaps.length){
+    gapsBtn.textContent = "未記入 " + gaps.length + " 件へ →";
+    gapsBtn.classList.toggle("ready", complete === false && gaps.length > 0
+                             && idx === TOKENS.length - 1);
+  }
   const sv = document.getElementById("saved");
   if(complete && SYNC_ON && sent){
     sv.textContent = "✓ 全 " + nAll + " 件が終わりました。ありがとうございました。"
@@ -497,6 +508,10 @@ function draw(){
   } else if(complete && SYNC_ON){
     sv.textContent = "保存中です。まもなく完了します。";
     sv.className = "hint";
+  } else if(!complete && idx === TOKENS.length - 1){
+    sv.textContent = "最後まで来ましたが、未記入が " + unfilledList().length
+                   + " 件あります。「未記入 … へ」で移動できます。";
+    sv.className = "hint warn";
   } else if(complete && STORE_OK){
     sv.textContent = "全 " + nAll + " 件が終わりました。「結果を出力」でファイルを保存し、"
                    + "メールに添付してご返信ください。→";
@@ -790,6 +805,12 @@ function restoreFromCsv(text){
   save();
   return {n, foreign};
 }
+document.getElementById("gaps").onclick = ()=>{
+  const gaps = unfilledList();
+  if(!gaps.length) return;
+  const next = gaps.find(i => i > idx);
+  go(next === undefined ? gaps[0] : next);
+};
 document.getElementById("resume").onclick = ()=>document.getElementById("resumeFile").click();
 document.getElementById("resumeFile").onchange = (e)=>{
   const f = e.target.files && e.target.files[0];
@@ -816,9 +837,16 @@ document.getElementById("resumeFile").onchange = (e)=>{
 // ---- 開き直したときに続きから始める ----
 // 保存が効く環境（Firefox の file://、または http で配信した場合）では、
 // 保存済みの state がそのまま読み込まれるので、最初の未記入トークンへ飛ぶだけでよい。
+function isFilled(t){
+  const st = state[t.id];
+  return !!(st && (st.unc || (st.burst != null && st.voi != null)));
+}
+/** 未記入のトークン番号（0起点）を全部返す */
+function unfilledList(){
+  return TOKENS.map((t, i) => isFilled(t) ? -1 : i).filter(i => i >= 0);
+}
 function firstUnfilled(){
-  const k = TOKENS.findIndex(t=>{ const st = state[t.id];
-    return !(st && (st.unc || (st.burst != null && st.voi != null))); });
+  const k = TOKENS.findIndex(t => !isFilled(t));
   return k < 0 ? TOKENS.length - 1 : k;
 }
 
