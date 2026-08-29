@@ -124,6 +124,8 @@
 
   <div class="playrow">
     <button class="playbig" id="playAll" hidden>▶ 音声を聞く</button>
+    <button class="mini" id="play" hidden disabled>▶ 選択範囲を再生</button>
+    <span class="hint">波形をドラッグすると、その範囲だけ聞けます</span>
   </div>
 
   <div class="step"><span class="num">1</span>全体を見て、対象の閉鎖音を探す
@@ -135,7 +137,6 @@
     <button class="mini" id="zoomIn">＋ 拡大</button>
     <button class="mini" id="zoomFit">全体表示</button>
     <button class="mini" id="zoomMark">選択中の線へ</button>
-    <button class="mini" id="play" hidden disabled>▶ 選択範囲を再生</button>
     <span class="hint" id="zoomInfo"></span></div>
   <audio id="au" preload="auto"></audio>
   <canvas id="detail"></canvas>
