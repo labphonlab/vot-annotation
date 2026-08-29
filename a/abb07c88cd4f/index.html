@@ -75,6 +75,8 @@
   .row.alt{margin-top:4px;padding-top:7px;border-top:1px dashed var(--line)}
   /* 7割以上のクリップに別の閉鎖音のバーストが入る。手順書を最初に一度読むだけでは
      忘れるので、毎トークン目に入る位置に出しておく */
+  .finbar{background:#eef7f0;border:1px solid #bcdcc6;border-radius:6px;
+          padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
   .filewarn{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
             padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
   .filewarn code{background:#fff;border:1px solid var(--line);border-radius:4px;padding:0 4px}
@@ -176,6 +178,12 @@
 </dialog>
 
 <main>
+  <div id="finbar" class="finbar" hidden>
+    <b>作業は終了しました。</b>ご協力ありがとうございました。
+    この画面は閉じていただいて構いません。
+    <span class="hint">修正が必要な場合は、お手数ですが依頼者までご連絡ください。</span>
+  </div>
+
   <div id="filewarn" class="filewarn" hidden>
     <b>このままでは作業が保存されません。</b>
     いったん閉じて、フォルダ内の <b>「はじめに開く」</b>（Mac は
@@ -399,7 +407,19 @@ function save(){ lsSet(KEY, JSON.stringify(state)); if(!STORE_OK){ warnNoSave();
     fromEdit=false は所要時間の記録だけの保存（トークン移動時）。
     このとき完了確認を予約してはいけない。完了済みのパケットを
     開き直しただけで「終了してよいですか」が出てしまう */
+function isFinished(){ return !!lsGet(KEY + "_done"); }
+/** 終了後は触れないようにする。押せるのに効かない状態が一番わかりにくい */
+function lockUI(){
+  document.getElementById("finbar").hidden = false;
+  [dt, ov].forEach(c=>{ c.style.pointerEvents = "none"; c.style.opacity = ".55"; });
+  document.querySelectorAll("[data-nudge],[data-clear],#uncBtn,#uncReason,.chip.sel")
+    .forEach(el=>{ el.disabled = true; el.style.pointerEvents = "none";
+                   el.style.opacity = ".5"; });
+  ["gaps","endBtn","finish2"].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.hidden = true; });
+}
 function commit(id, fromEdit){
+  if(isFinished()) return;          // 終了後は記録も送信もしない
   const r = state[id]; if(r) r.ts = Date.now();
   save();
   enqueue(id);
@@ -631,6 +651,7 @@ function doneCount(){
 }
 
 function setMs(which, ms){
+  if(isFinished()) return;
   const r = rec();
   r[which] = Math.max(0, Math.min(CLIP_MS, Math.round(ms*10)/10));
   r.unc = false; r.reason = "";
@@ -735,14 +756,17 @@ document.querySelectorAll("[data-nudge]").forEach(b=>b.onclick=()=>{
   setMs(w, r[w] + (+b.dataset.d));
 });
 document.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{
+  if(isFinished()) return;
   const r = rec(); delete r[b.dataset.clear]; commit(cur().id); draw();
 });
 document.getElementById("uncBtn").onclick = ()=>{
+  if(isFinished()) return;
   const r = rec(); r.unc = !r.unc;
   if(r.unc){ delete r.burst; delete r.voi; }
   commit(cur().id); draw();
 };
 document.getElementById("uncReason").onchange = e=>{
+  if(isFinished()) return;
   const r = rec(); r.reason = e.target.value; if(r.reason) r.unc = true;
   commit(cur().id); draw();
 };
@@ -873,6 +897,8 @@ document.getElementById("doneGo").onclick = ()=>{
                             n_filled:doneCount(), n_total:TOKENS.length})}).catch(()=>{});
   }
   lsSet(KEY + "_done", "1");
+  cancelDoneAsk();
+  lockUI(); draw();
   dlgDone.close(); dlgThanks.showModal();
 };
 document.getElementById("thanksClose").onclick = ()=>dlgThanks.close();
@@ -940,6 +966,7 @@ function autoDump(){
 }
 
 // file:// で開かれている＝保存領域が無い可能性が高い。開始時に大きく知らせる
+if(isFinished()) lockUI();
 if(location.protocol === "file:"){
   const fw = document.getElementById("filewarn");
   if(fw) fw.hidden = false;
