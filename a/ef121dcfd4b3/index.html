@@ -168,6 +168,18 @@
     <button class="primary" id="doneGo">終了する</button></div>
 </dialog>
 
+<dialog id="dlgDone2">
+  <h3 style="margin:0 0 .5em">本当に終了してよろしいですか</h3>
+  <p style="margin:0 0 .6em">
+    終了すると、<b>記入内容の修正ができなくなります。</b><br>
+    見直しの必要がなければ、そのままお進みください。</p>
+  <p class="hint" style="margin:0 0 1.2em">
+    記入内容はすでに保存されています。終了しても失われません。</p>
+  <div style="text-align:right;display:flex;gap:8px;justify-content:flex-end">
+    <button class="mini" id="done2Back">戻る</button>
+    <button class="primary" id="done2Go">終了する</button></div>
+</dialog>
+
 <dialog id="dlgThanks">
   <h3 style="margin:0 0 .5em">ありがとうございました</h3>
   <p style="margin:0 0 .6em">作業は以上です。<b>この画面は閉じていただいて構いません。</b></p>
@@ -890,7 +902,9 @@ function askDone(){
   dlgDone.showModal();
 }
 document.getElementById("doneBack").onclick = ()=>dlgDone.close();
-document.getElementById("doneGo").onclick = ()=>{
+document.getElementById("doneGo").onclick = ()=>{ dlgDone.close(); dlgDone2.showModal(); };
+document.getElementById("done2Back").onclick = ()=>{ dlgDone2.close(); dlgDone.showModal(); };
+document.getElementById("done2Go").onclick = ()=>{
   if(SYNC_ON){
     fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
       body: JSON.stringify({key:SYNC_KEY, kind:"done", annotator:AID,
@@ -899,7 +913,7 @@ document.getElementById("doneGo").onclick = ()=>{
   lsSet(KEY + "_done", "1");
   cancelDoneAsk();
   lockUI(); draw();
-  dlgDone.close(); dlgThanks.showModal();
+  dlgDone2.close(); dlgThanks.showModal();
 };
 document.getElementById("thanksClose").onclick = ()=>dlgThanks.close();
 
