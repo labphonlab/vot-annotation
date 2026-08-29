@@ -81,8 +81,6 @@
      忘れるので、毎トークン目に入る位置に出しておく */
   .pv{display:inline-flex;align-items:center;gap:7px;font-size:13px;cursor:pointer}
   .pv input{width:15px;height:15px}
-  .ordererr{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
-            padding:6px 11px;font-size:13px;color:#b91c1c}
   .finbar{background:#eef7f0;border:1px solid #bcdcc6;border-radius:6px;
           padding:8px 12px;margin:6px 0 2px;font-size:13px;line-height:1.55}
   .filewarn{background:#fff4f4;border:1px solid #e5b4b4;border-radius:6px;
@@ -303,12 +301,6 @@
       <b>解放より前から声帯振動がある</b>（前有声化）</label>
     <span class="hint">その場合も <b>voicing onset は解放より後</b>の
       周期性開始に置いてください</span></div>
-
-  <div class="row" id="orderErr" hidden>
-    <span class="ordererr">⚠ <b>有声開始がバーストより前にあります。</b>
-      有声開始は、解放（バースト）より後に置いてください。<br>
-      解放より前から声帯振動がある場合は、<b>上のチェックを入れたうえで</b>、
-      有声開始は<b>解放後</b>の周期性開始に置いてください。</span></div>
 
   <div class="row alt">
     <span class="hint" style="margin-right:2px">または</span>
@@ -633,7 +625,6 @@ function draw(){
                             : (complete ? "✓ 結果を出力する" : "結果を出力");
   // 飛ばした分を探せるようにする。80件のうち数件抜けると、
   // 手作業で探すのは現実的でない
-  document.getElementById("orderErr").hidden = !orderBad(r);
   document.getElementById("pvChk").checked = !!r.pv;
   const gapsBtn = document.getElementById("gaps");
   const gaps = unfilledList();
@@ -1021,15 +1012,12 @@ document.getElementById("resumeFile").onchange = (e)=>{
 // ---- 開き直したときに続きから始める ----
 // 保存が効く環境（Firefox の file://、または http で配信した場合）では、
 // 保存済みの state がそのまま読み込まれるので、最初の未記入トークンへ飛ぶだけでよい。
-/** burst < voicing_onset か。手続き書 §5.2 のとおり、前有声化があっても
-    voicing_onset は解放**後**の周期性開始に置くので、この順序は必ず成り立つ。
-    逆転しているのは置き間違いであり、記入済みとして数えない */
-function orderBad(st){
-  return !!(st && st.burst != null && st.voi != null && st.voi <= st.burst);
-}
+// 順序（voicing_onset > burst）は手続き書 §5.2 の定義だが、画面では警告しない。
+// 専門家の判断に割り込まないため。逆転していれば負の VOT として記録に残るので、
+// 分析時に見分けられる。前有声化はチェック欄で別に取る
 function isFilled(t){
   const st = state[t.id];
-  return !!(st && (st.unc || (st.burst != null && st.voi != null && !orderBad(st))));
+  return !!(st && (st.unc || (st.burst != null && st.voi != null)));
 }
 /** 未記入のトークン番号（0起点）を全部返す */
 function unfilledList(){
