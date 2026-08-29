@@ -148,13 +148,6 @@
       <option>1年未満</option><option>1〜3年</option>
       <option>3〜10年</option><option>10年以上</option>
     </select></div>
-  <div class="pf"><label>謝辞にお名前を <span class="req">*</span></label>
-    <select id="pfCredit">
-      <option value="">— 選択 —</option>
-      <option>記載してよい</option><option>匿名にしてほしい</option>
-    </select></div>
-  <div class="pf"><label>ご質問など</label>
-    <input id="pfNote" type="text" placeholder="任意"></div>
   <p class="hint" style="margin:1em 0 .4em">
     謝礼は作業完了後、メールでお送りします（受取先はここでは伺いません）。<br>
     このリンクはあなた専用です。<b>作業はご本人が最後まで行ってください。</b>
@@ -490,15 +483,20 @@ function draw(){
   const sent = SYNC_ON && queue.length === 0;
   fin.classList.toggle("ready", complete && !SYNC_ON);
   fin.classList.toggle("mini", !(complete && !SYNC_ON));
-  fin.textContent = SYNC_ON ? "控えを保存"
+  fin.textContent = SYNC_ON ? "手元に控えを保存"
                             : (complete ? "✓ 結果を出力する" : "結果を出力");
   const sv = document.getElementById("saved");
   if(complete && SYNC_ON && sent){
-    sv.textContent = "✓ 全 " + nAll + " 件を送信済みです。ご返信は不要です。";
+    sv.textContent = "✓ 全 " + nAll + " 件が終わりました。ありがとうございました。"
+                   + "保存は済んでいますので、ご返信は不要です。";
     sv.className = "hint allDone";
-  } else if(complete && SYNC_ON){
-    sv.textContent = "未送信が " + queue.length + " 件あります。この画面を開いたままお待ちください。";
+  } else if(complete && SYNC_ON && syncStuck()){
+    sv.textContent = "⚠ 保存できていない分があります。通信環境をご確認のうえ、"
+                   + "この画面をしばらく開いたままにしてください。";
     sv.className = "hint warn";
+  } else if(complete && SYNC_ON){
+    sv.textContent = "保存中です。まもなく完了します。";
+    sv.className = "hint";
   } else if(complete && STORE_OK){
     sv.textContent = "全 " + nAll + " 件が終わりました。「結果を出力」でファイルを保存し、"
                    + "メールに添付してご返信ください。→";
@@ -856,13 +854,31 @@ let queue = [];
 try{ queue = JSON.parse(lsGet(KEY + "_q") || "[]"); }catch(_){ queue = []; }
 let sending = false;
 
+let pendingSince = null;      // 送れない状態が続き始めた時刻
+const STUCK_MS = 30000;       // これを超えたら黙っていない
+function syncStuck(){
+  return pendingSince != null && Date.now() - pendingSince > STUCK_MS;
+}
 function syncBadge(){
   const el = document.getElementById("sync");
   if(!SYNC_ON){ el.hidden = true; return; }
   el.hidden = false;
-  if(sending)          { el.textContent = "送信中…";                 el.className = "hint"; }
-  else if(queue.length){ el.textContent = "未送信 " + queue.length + " 件"; el.className = "hint warn"; }
-  else                 { el.textContent = "✓ サーバに保存済み";      el.className = "hint allDone"; }
+  // 協力者に見せるのは「保存されているか」だけでよい。
+  // 送信キューの件数や「サーバ」という語は内部事情であり、
+  // しかも本人には対処のしようがない。
+  if(syncStuck()){
+    el.textContent = "⚠ 保存できていません。通信環境をご確認ください";
+    el.className = "hint warn";
+  }else if(queue.length || sending){
+    el.textContent = "保存中…";
+    el.className = "hint";
+  }else{
+    el.textContent = "✓ 保存されています";
+    el.className = "hint allDone";
+  }
+  // 保存が滞っているときだけ、手元に控えを取る手段を出す
+  const fin = document.getElementById("finish2");
+  if(fin) fin.hidden = SYNC_ON && !syncStuck();
 }
 
 function payload(id){
@@ -887,7 +903,9 @@ function enqueue(id){
 
 function flush(){
   if(!SYNC_ON || sending || !queue.length) return;
-  sending = true; syncBadge();
+  sending = true;
+  if(pendingSince == null) pendingSince = Date.now();
+  syncBadge();
   const item = queue[0];
   // Content-Type を text/plain にしてプリフライトを起こさない
   // （Apps Script は OPTIONS に応答できない）
@@ -899,11 +917,13 @@ function flush(){
       if(res && res.ok){
         queue = queue.filter(x => x !== item);
         lsSet(KEY + "_q", JSON.stringify(queue));
+        if(!queue.length) pendingSince = null;
         syncBadge();
         if(queue.length) flush();
       }else{
         syncBadge();
         setTimeout(flush, 5000);        // 通信断・エラーは待って再送
+        setTimeout(syncBadge, STUCK_MS); // 滞ったら知らせる
       }
     });
 }
@@ -923,7 +943,7 @@ function askProfile(done){
   dlg.showModal();
   document.getElementById("pfGo").onclick = ()=>{
     const need = {pfName:"お名前", pfMail:"メールアドレス", pfNat:"母語",
-                  pfKo:"韓国語", pfExp:"セグメンテーション経験", pfCredit:"謝辞"};
+                  pfKo:"韓国語", pfExp:"セグメンテーション経験"};
     const miss = Object.keys(need).filter(k => !g(k));
     if(miss.length){
       document.getElementById("pfErr").textContent =
@@ -931,8 +951,7 @@ function askProfile(done){
     }
     const body = {key: SYNC_KEY, kind: "profile", annotator: AID,
       name: g("pfName"), email: g("pfMail"), native_lang: g("pfNat"),
-      other_langs: g("pfOther"), korean: g("pfKo"), experience: g("pfExp"),
-      credit_ok: g("pfCredit"), note: g("pfNote")};
+      other_langs: g("pfOther"), korean: g("pfKo"), experience: g("pfExp")};
     lsSet(KEY + "_pf", "1");
     if(SYNC_ON){
       fetch(SYNC_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"},
